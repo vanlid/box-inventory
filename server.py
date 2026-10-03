@@ -323,7 +323,9 @@ Also suggest a short 2-4 word name for the box and pick a category.
 
 # ---------- HTTP ----------
 
-PUBLIC = {"/", "/api/auth/state", "/api/auth/login/options", "/api/auth/login/verify", "/api/auth/logout",
+STATIC = ROOT / "static"  # installable-app files: manifest, service worker, icons (no secrets, served without sign-in)
+STATIC_TYPES = {".webmanifest": "application/manifest+json", ".js": "text/javascript; charset=utf-8", ".png": "image/png"}
+PUBLIC = {"/", "/manifest.webmanifest", "/sw.js", "/api/auth/state", "/api/auth/login/options", "/api/auth/login/verify", "/api/auth/logout",
           "/api/auth/register/options", "/api/auth/register/verify"}  # register/* check permission themselves
 
 
@@ -339,7 +341,8 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "private, max-age=86400" if ctype == "image/jpeg" else "no-store")
+        if not any(k == "Cache-Control" for k, _ in headers):
+            self.send_header("Cache-Control", "private, max-age=86400" if ctype == "image/jpeg" else "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         for k, v in headers:
@@ -386,7 +389,7 @@ class H(BaseHTTPRequestHandler):
 
     def guard(self, path):
         """True if the request may proceed; otherwise sends 401/403 and returns False."""
-        if not AUTH_ON or path in PUBLIC or path.startswith("/api/backup/"):  # backup routes check access themselves
+        if not AUTH_ON or path in PUBLIC or path.startswith(("/api/backup/", "/icons/")):  # backup routes check access themselves
             return True
         if self.command != "GET":
             with lock:
@@ -591,6 +594,12 @@ class H(BaseHTTPRequestHandler):
         cmd = self.command
         if p == "/" and cmd == "GET":
             return self.send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
+        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|icons/[\w-]+\.png)", p)
+        if m and cmd == "GET":
+            f = STATIC / m.group(1)
+            if not f.is_file():
+                return self.fail(404, "Not found")
+            return self.send(200, f.read_bytes(), STATIC_TYPES[f.suffix], headers=[("Cache-Control", "no-cache")])
         m = re.fullmatch(r"/photos/(\d+)/([\w-]+\.jpg)", p)
         if m and cmd == "GET":
             f = PHOTOS / m.group(1) / m.group(2)

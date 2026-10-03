@@ -91,6 +91,22 @@ your LAN port. Use `TS_HOSTNAME` in `.env` for a different device name.
 
 Restart the app after changing `.env` (run the install line again, or `docker compose up -d`).
 
+## Install it as an app on your phone or computer
+
+Open the app at its https address (see "Sign-in with passkeys"), then:
+
+| Device / browser | How | Share photos into a box |
+|---|---|---|
+| Android, Chrome | menu → **Install app** (or Settings → App → Install) | Yes: gallery/camera → Share → Box Inventory |
+| Android, Edge / Firefox | menu → **Add to phone** / **Install** | Chrome only |
+| iPhone / iPad, Safari | Share → **Add to Home Screen** | No (iOS doesn't allow it) |
+| Windows / Mac / Linux, Chrome or Edge | install icon in the address bar | Yes |
+| Mac, Safari | File → **Add to Dock** | No |
+| Firefox on desktop | Works in a tab; installing depends on the version and system | No |
+
+The installed app opens full-screen like a normal app, and passkeys work in it. When photos are
+shared into it, it asks which box or spot they belong to, then uploads and scans them as usual.
+
 ## Tracking clothes and things that move around
 
 Besides numbered **boxes**, add **spots**: places that aren't boxes, like a wardrobe shelf, the

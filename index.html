@@ -1,5 +1,14 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Box Inventory</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#EDEFEA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121416" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Boxes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -22,12 +31,13 @@
 
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
-.wrap { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 64px; }
+.wrap { max-width: 880px; margin: 0 auto; padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  padding-block: calc(20px + env(safe-area-inset-top)) calc(64px + env(safe-area-inset-bottom)); }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-header.top { display: grid; gap: 14px; margin-bottom: 18px; }
+header.top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 18px; }
 .brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 h1 { font: 800 clamp(26px, 6vw, 36px)/1 var(--display); font-stretch: 75%; letter-spacing: .01em; margin: 0; text-transform: uppercase; }
 .counts { font: 500 12px/1.4 var(--mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
@@ -326,6 +336,7 @@ async function load() {
     S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.things = db.things || {}; S.loaded = true;
     if (S.room !== "all" && S.room !== "none" && !S.rooms.some((r) => r.id === S.room)) S.room = "all";
     render();
+    offerShared();
   } catch (e) { if (S.view !== "auth") $("#list").innerHTML = `<p class="notice">${esc(e.message)}</p>`; }
 }
 
@@ -1249,6 +1260,71 @@ $("#laundryview").addEventListener("click", (e) => {
   tpatch(a.dataset.advance, a.dataset.next === "home" ? { backHome: true } : { status: a.dataset.next });
 });
 
+
+/* ---------- installable app ---------- */
+let installPrompt = null;
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; if (S.view === "settings") renderSettings(); });
+addEventListener("appinstalled", () => { installPrompt = null; if (S.view === "settings") renderSettings(); });
+function appSection() {
+  if (isStandalone()) return `<p class="hint">You're using the installed app.</p>`;
+  if (installPrompt) return `<div class="btnrow"><button class="btn tape" data-install>Install app</button></div>
+    <p class="hint">Adds Box Inventory to your home screen or desktop, opening like a normal app. On Android you can then share photos from the gallery straight into a box.</p>`;
+  if (isIOS()) return `<p class="hint">To install on iPhone or iPad: tap the <b>Share</b> button in Safari, then <b>Add to Home Screen</b>.</p>`;
+  if (!window.isSecureContext) return `<p class="hint">The app can be installed when opened at its secure https address.</p>`;
+  const ua = navigator.userAgent;
+  if (/Firefox\//.test(ua)) return `<p class="hint">Everything works here in Firefox. ${/Android/.test(ua) ? "To install: menu → <b>Install</b> (or <b>Add to Home screen</b>)."
+    : "Firefox can't install web apps on every system: if its menu has no install option, keep using it in a tab, or open the app in Chrome, Edge or Safari to install it."}</p>`;
+  if (/Safari\//.test(ua) && !/Chrome|Chromium|Edg\//.test(ua)) return `<p class="hint">To install on a Mac: <b>File → Add to Dock</b>.</p>`;
+  return `<p class="hint">Use your browser's install option: in Chrome and Edge, the install icon in the address bar, or the menu → <b>Install Box Inventory</b> (Edge on Android: <b>Add to phone</b>).</p>`;
+}
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-install]") || !installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => {});
+  installPrompt = null; renderSettings();
+});
+
+/* Photos shared from another app (Android/desktop share sheet) wait in the service worker's cache. */
+S.sharedCount = Number(new URLSearchParams(location.search).get("shared")) || 0;
+async function takeShared() {
+  const cache = await caches.open("box-shared");
+  const files = [];
+  for (const req of await cache.keys()) {
+    const r = await cache.match(req);
+    const blob = await r.blob();
+    files.push(new File([blob], `shared-${files.length + 1}.jpg`, { type: blob.type || "image/jpeg" }));
+    await cache.delete(req);
+  }
+  return files;
+}
+function offerShared() {
+  if (!S.sharedCount || !S.loaded || S.view === "auth") return;
+  const n = S.sharedCount;
+  $("#banner").innerHTML = `<div class="banner"><span class="msg"><b>${n} shared photo${n > 1 ? "s" : ""}.</b> Add ${n > 1 ? "them" : "it"} to:</span>
+    <select id="share-to" class="field-sel" style="width:auto;flex:1;min-width:160px"><option value="">Pick a box or spot…</option>
+      ${sorted().map((b) => `<option value="${esc(b.id)}">${esc(placeName(b))}</option>`).join("")}
+      <option value="__box">+ New box</option><option value="__spot">+ New spot</option></select>
+    <button class="linkbtn" data-share-cancel>Discard</button></div>`;
+}
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "share-to" || !e.target.value) return;
+  let id = e.target.value;
+  try {
+    if (id === "__box" || id === "__spot") id = keep(await api("POST", "/api/boxes", { kind: id === "__spot" ? "spot" : "box" })).id;
+    const files = await takeShared();
+    S.sharedCount = 0; $("#banner").innerHTML = ""; history.replaceState(null, "", "/");
+    openBox(id);
+    if (files.length) addPhotos(files); else setStatus("err", "The shared photos weren't found. Share them again.");
+  } catch (err) { alert(err.message); }
+});
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-share-cancel]")) return;
+  await takeShared().catch(() => {}); S.sharedCount = 0; $("#banner").innerHTML = ""; history.replaceState(null, "", "/");
+});
+
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {
   const el = $("#s-body");
@@ -1273,6 +1349,7 @@ async function renderSettings() {
   }
   el.innerHTML = `<section><div class="bh"><h2>Rooms</h2></div>
       ${S.rooms.length ? `<ul class="rows">${rooms}</ul>` : `<p class="hint">No rooms yet. Add them with + Room on the main screen.</p>`}</section>
+    <section><div class="bh"><h2>App</h2></div>${appSection()}</section>
     <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}
     ${S.auth?.auth ? "" : `<p class="hint">Sign-in is turned off on this server (AUTH=off).</p>`}`;
   backupPanel($("#bk"));

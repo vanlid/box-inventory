@@ -1,0 +1,22 @@
+{
+  "name": "Box Inventory",
+  "short_name": "Boxes",
+  "description": "What's in every box, where it is, and where your things went.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EDEFEA",
+  "theme_color": "#F5C518",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": { "files": [{ "name": "photos", "accept": ["image/*"] }] }
+  }
+}
