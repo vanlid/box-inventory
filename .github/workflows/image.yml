@@ -46,6 +46,10 @@ jobs:
           push: true
           pull: true          # always start from the newest base image
           no-cache: ${{ github.event_name == 'schedule' }}  # weekly: fresh apt packages and Claude Code
+          # Reuse layers between runs: a normal push only rebuilds what changed. The emulated arm64
+          # half is ~8x slower than amd64, so this matters most there.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
