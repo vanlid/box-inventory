@@ -24,7 +24,7 @@ from pathlib import Path
 
 ZIP_PREFIX = "box-inventory-"
 CHUNK = 320 * 1024 * 32  # 10 MiB: a multiple of both Google's 256 KiB and OneDrive's 320 KiB
-ALLOWED = re.compile(r"^(manifest\.json|inventory\.json|auth\.json|photos/\d+/[\w-]+\.jpg)$")
+ALLOWED = re.compile(r"^(manifest\.json|inventory\.json|auth\.json|photos/\d+/[\w-]+\.jpg|refs/\w+\.jpg)$")
 MAX_RESTORE = 20 * 1024 ** 3
 
 
@@ -458,6 +458,8 @@ class Backups:
                     z.writestr("auth.json", json.dumps(auth), zipfile.ZIP_DEFLATED)
                 for f in sorted((self.data / "photos").glob("*/*.jpg")):
                     z.write(f, f"photos/{f.parent.name}/{f.name}", zipfile.ZIP_STORED)
+                for f in sorted((self.data / "refs").glob("*.jpg")):
+                    z.write(f, f"refs/{f.name}", zipfile.ZIP_STORED)
         try:
             p.upload(tmp, name, progress)
             size = tmp.stat().st_size
@@ -501,13 +503,13 @@ class Backups:
                     keep = self.data / time.strftime("before-restore-%Y%m%d-%H%M%S")
                     keep.mkdir(parents=True)
                     current_auth = {}
-                    for n in ("inventory.json", "auth.json", "photos"):
+                    for n in ("inventory.json", "auth.json", "photos", "refs"):
                         if (self.data / n).exists():
                             if n == "auth.json":
                                 current_auth = json.loads((self.data / n).read_text("utf-8"))
                             shutil.move(str(self.data / n), str(keep / n))
                     for n in names:  # every name was checked against ALLOWED above: no path tricks possible
-                        if n.startswith("photos/"):
+                        if n.startswith(("photos/", "refs/")):
                             (self.data / n).parent.mkdir(parents=True, exist_ok=True)
                             (self.data / n).write_bytes(z.read(n))
                     (self.data / "photos").mkdir(exist_ok=True)

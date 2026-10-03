@@ -183,6 +183,48 @@ button.tag { border: none; cursor: pointer; }
 #bk p { margin: 0; }
 #bk .err:empty { display: none; }
 .btnrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; }
+.tabs button { flex: 1; border: none; background: none; border-radius: 8px; padding: 8px 6px; font-weight: 700; color: var(--muted); }
+.tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.tag.spot { display: block; background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); font-size: 13px; font-stretch: 75%; letter-spacing: .06em;
+  text-transform: uppercase; padding: 8px 8px; min-width: 58px; max-width: 96px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.tag.spot.big { font-size: 16px; min-width: 84px; max-width: 150px; padding: 14px 10px; }
+.pill-s { display: inline-block; font: 600 12px/1.2 var(--body); padding: 2px 8px; border-radius: 999px; border: 1.5px solid currentColor; white-space: nowrap; }
+.s-clean { color: var(--ok); } .s-in_use, .s-washing, .s-drying { color: var(--accent); } .s-to_wash { color: var(--tape-ink); background: var(--tape); border-color: var(--tape); }
+.s-lent { color: var(--muted); } .s-missing { color: var(--danger); }
+.away { font: 600 12px var(--body); color: var(--danger); }
+.tcard { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; text-align: left; padding: 10px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; min-width: 0; }
+.tcard:hover { border-color: var(--ink); }
+.tcard .meta { display: grid; gap: 3px; min-width: 0; }
+.tcard .meta .sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.thumb56 { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--bg); display: grid; place-items: center; font: 800 22px var(--display); color: var(--muted); overflow: hidden; }
+canvas.thumb56 { display: block; }
+.tlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.code { font: 500 11px var(--mono); color: var(--muted); letter-spacing: .06em; }
+.statusrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.statusrow button { border: 1.5px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-weight: 600; }
+.statusrow button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tpic { width: 100%; max-width: 320px; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: var(--surface); border: 1.5px solid var(--line); display: block; }
+.thead { display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 16px; align-items: start; margin: 8px 0 6px; }
+@media (max-width: 520px) { .thead { grid-template-columns: 1fr; } }
+.counts-t { display: grid; gap: 6px; }
+.counts-t li { grid-template-columns: 1fr auto; }
+.stepper { display: inline-flex; align-items: center; gap: 6px; font: 600 15px var(--mono); }
+.stepper button { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface); font-weight: 800; }
+.hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.hist li { display: flex; gap: 10px; } .hist time { color: var(--muted); min-width: 92px; font-variant-numeric: tabular-nums; }
+.lane { display: grid; gap: 8px; margin-bottom: 20px; }
+.lane h2 { margin: 0; font: 800 14px var(--display); letter-spacing: .1em; text-transform: uppercase; display: flex; gap: 8px; align-items: baseline; }
+.lane h2 .n { font: 500 12px var(--mono); color: var(--muted); }
+.lcard { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; }
+.lcard .meta { min-width: 0; display: grid; gap: 2px; text-align: left; background: none; border: none; padding: 0; }
+.items li { grid-template-columns: 44px 56px 1fr auto auto; }
+.items .trk { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; font-size: 12px; font-weight: 700; padding: 4px 8px; color: var(--muted); }
+.items .trk.on { color: var(--ok); border-color: var(--ok); }
+.seen li { grid-template-columns: 56px 1fr auto; }
+.seen .pics { display: flex; gap: 4px; }
+.seen canvas, .seen img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; display: block; }
+.seenbtn { padding: 0; border: none; background: none; cursor: zoom-in; }
 select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; }
 </style>
 </head><body>
@@ -196,9 +238,13 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
         <button class="iconbtn" id="gear" hidden aria-label="Settings">Settings</button>
       </span>
     </div>
+    <nav class="tabs" id="tabs" hidden aria-label="Sections">
+      <button data-tab="list">Places</button><button data-tab="things">Tracked</button><button data-tab="laundry">Laundry</button>
+    </nav>
     <div class="searchrow" id="searchrow" hidden>
-      <input id="q" class="search" type="search" placeholder="Find anything… e.g. HDMI, krill, insurance" autocomplete="off" aria-label="Search all boxes">
-      <button id="newbox" class="btn tape">+ New box</button>
+      <input id="q" class="search" type="search" placeholder="Find anything… e.g. HDMI, krill, hoodie" autocomplete="off" aria-label="Search all boxes">
+      <button id="newbox" class="btn tape">+ Box</button>
+      <button id="newspot" class="btn ghost" title="A place that isn't a box: wardrobe shelf, laundry basket…">+ Spot</button>
     </div>
     <div class="roomrow" id="roomrow" hidden></div>
   </header>
@@ -212,13 +258,14 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
   </main>
 
   <main id="detail" hidden>
-    <button class="back" data-back>← All boxes</button>
+    <button class="back" data-back>← All places</button>
     <div id="d-head"></div>
     <section class="block">
       <div class="bh"><h2>Photos</h2><span class="hint">New photos are scanned automatically</span></div>
       <div id="d-photos"></div>
     </section>
     <div id="status"></div>
+    <section class="block" id="d-seen" hidden></section>
     <section class="block">
       <div class="bh"><h2 id="items-h">Contents</h2><button class="btn ghost" id="rescan" hidden>Re-scan all photos</button></div>
       <div id="d-items"></div>
@@ -233,8 +280,12 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
     </div>
   </main>
 
+  <main id="thingsview" hidden><div id="t-list"></div></main>
+  <main id="thingview" hidden><button class="back" data-tab="things">← Tracked items</button><div id="t-body"></div></main>
+  <main id="laundryview" hidden><div id="l-body"></div></main>
+
   <main id="settings" hidden>
-    <button class="back" data-back>← All boxes</button>
+    <button class="back" data-back>← Back</button>
     <div class="panel" id="s-body"></div>
   </main>
 </div>
@@ -263,7 +314,7 @@ async function api(method, path, body, type = "application/json") {
   if (!r.ok) throw new Error(data.error || "The server didn't respond. Is the computer running it on?");
   return data;
 }
-const keep = (box) => { S.boxes.set(String(box.number), box); render(); return box; };
+const keep = (box) => { S.boxes.set(String(box.id), box); render(); return box; };
 async function patch(id, data) {
   try { return keep(await api("PATCH", "/api/boxes/" + id, data)); }
   catch (e) { setStatus("err", e.message); }
@@ -271,7 +322,7 @@ async function patch(id, data) {
 async function load() {
   try {
     const db = await api("GET", "/api/boxes");
-    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.loaded = true;
+    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.things = db.things || {}; S.loaded = true;
     if (S.room !== "all" && S.room !== "none" && !S.rooms.some((r) => r.id === S.room)) S.room = "all";
     render();
   } catch (e) { if (S.view !== "auth") $("#list").innerHTML = `<p class="notice">${esc(e.message)}</p>`; }
@@ -283,12 +334,20 @@ function show(view) {
   const app = view !== "auth";
   $("#authview").hidden = view !== "auth";
   $("#listview").hidden = view !== "list";
+  $("#thingsview").hidden = view !== "things";
+  $("#thingview").hidden = view !== "thing";
+  $("#laundryview").hidden = view !== "laundry";
+  const tab = { list: "list", detail: "list", things: "things", thing: "things", laundry: "laundry" }[view];
+  $("#tabs").hidden = !tab;
+  document.querySelectorAll("#tabs [data-tab]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.tab === tab));
+  if (tab) S.tab = tab;
   $("#detail").hidden = view !== "detail";
   $("#settings").hidden = view !== "settings";
   $("#searchrow").hidden = $("#roomrow").hidden = view !== "list";
   $("#gear").hidden = !app || view === "settings";
   $("#counts").hidden = !app;
   if (view !== "detail") S.open = null;
+  if (view !== "thing") S.openThing = null;
   disarm();
   window.scrollTo(0, 0);
 }
@@ -401,8 +460,15 @@ function render() {
   if (S.view === "auth") return;
   const boxes = [...S.boxes.values()];
   const items = boxes.reduce((a, b) => a + (b.items || []).reduce((s, i) => s + (Number(i.qty) || 1), 0), 0);
-  $("#counts").textContent = S.loaded ? `${boxes.length} box${boxes.length === 1 ? "" : "es"} · ${items} item${items === 1 ? "" : "s"}` : "";
+  const nb = boxes.filter((b) => b.kind !== "spot").length, nt = Object.keys(S.things).length;
+  $("#counts").textContent = S.loaded ? `${nb} box${nb === 1 ? "" : "es"} · ${items} item${items === 1 ? "" : "s"}${nt ? ` · ${nt} tracked` : ""}` : "";
   renderRooms(); renderList();
+  if (S.view === "things") renderThings();
+  if (S.view === "laundry") renderLaundry();
+  if (S.view === "thing") {
+    const a = document.activeElement;
+    if (a && $("#thingview").contains(a) && a.matches("input:not([type=file]), select")) { S.pendingThing = true; } else renderThing();
+  }
   if (S.view === "detail") {
     const a = document.activeElement;
     if (a && $("#detail").contains(a) && a.matches("input:not([type=file]), select")) { S.pending = true; return; }
@@ -411,11 +477,20 @@ function render() {
 }
 $("#detail").addEventListener("focusout", () => setTimeout(() => {
   const a = document.activeElement;
-  if (S.pending && !(a && $("#detail").contains(a) && a.matches("input:not([type=file]), select"))) { S.pending = false; renderDetail(); }
+  if (S.pending && !(a && $("#detail").contains(a) && a.matches("input:not([type=file]), select"))) { S.pending = false; if (S.view === "detail") renderDetail(); }
 }, 0));
 
-function sorted() { return [...S.boxes.values()].sort((a, b) => a.number - b.number); }
-const photoSrc = (b, name) => `/photos/${b.number}/${name}`;
+// Boxes first in label order, then spots by name.
+function sorted() { return [...S.boxes.values()].sort((a, b) => (a.kind === "spot") - (b.kind === "spot") || (a.number || 0) - (b.number || 0) || (a.name || "").localeCompare(b.name || "")); }
+const photoSrc = (b, name) => `/photos/${b.id}/${name}`;
+const isSpot = (b) => b?.kind === "spot";
+const placeName = (b) => !b ? "a deleted place" : isSpot(b) ? (b.name || "Unnamed spot") : b.name ? `Box ${num(b.number)} · ${b.name}` : `Box ${num(b.number)}`;
+const placeShort = (b) => !b ? "a deleted place" : isSpot(b) ? (b.name || "Unnamed spot") : `Box ${num(b.number)}`;
+const placeTag = (b, big = "", attrs = "") => isSpot(b)
+  ? `<span class="tag spot ${big}" ${attrs} title="${esc(b.name)}"><small>SPOT</small>${esc(b.name || "?")}</span>`
+  : `<span class="tag ${big}" ${attrs}><small>BOX</small>${num(b.number)}</span>`;
+const cropAttrs = (src, box) => `data-src="${esc(src)}" data-box="${box.join(",")}"`;
+const lbAttrs = (src, box, cap) => `data-lb-src="${esc(src)}" data-lb-box="${box ? box.join(",") : ""}" data-lb-cap="${esc(cap)}"`;
 
 function renderRooms() {
   if (!S.loaded) return;
@@ -448,10 +523,10 @@ $("#roomrow").addEventListener("focusout", (e) => { if (e.target.id === "newroom
 function boxCard(b) {
   const its = b.items || [];
   const where = [b.category, b.location && "at " + b.location].filter(Boolean).join(" · ");
-  return `<button class="card" data-open="${b.number}">
-    <span class="tag"><small>BOX</small>${num(b.number)}</span>
+  return `<button class="card" data-open="${b.id}">
+    ${placeTag(b)}
     <span class="meta">
-      <span class="name">${b.name ? esc(b.name) : '<span class="unnamed">Unnamed box</span>'}</span>
+      <span class="name">${b.name ? esc(b.name) : `<span class="unnamed">Unnamed ${isSpot(b) ? "spot" : "box"}</span>`}</span>
       <span class="sub">${esc(where) || "No category or place yet"}</span>
       <span class="peek">${its.length ? esc(its.slice(0, 6).map((i) => i.name).join(", ")) + (its.length > 6 ? ` +${its.length - 6} more` : "") : '<span class="unnamed">Empty list</span>'}</span>
     </span>
@@ -469,7 +544,7 @@ function renderList() {
       <h2>No boxes yet</h2>
       <ol>
         <li>Optional: add your rooms with <b>+ Room</b> (Kitchen, Bedroom, Storage…).</li>
-        <li>Write a number on a box (1, 2, 3…) and tap <b>+ New box</b>.</li>
+        <li>Write a number on a box (1, 2, 3…) and tap <b>+ Box</b>. Places that aren't boxes, like a wardrobe shelf or the laundry basket, are <b>+ Spot</b>.</li>
         <li>Take a photo or two of what's inside. Claude lists the items and remembers where each one is in the photo.</li>
         <li>Later, search for anything and see exactly which box, and where in it.</li>
       </ol>
@@ -478,7 +553,7 @@ function renderList() {
     return;
   }
   if (S.room !== "all") boxes = boxes.filter((b) => (b.room || "") === (S.room === "none" ? "" : S.room));
-  if (!boxes.length) { el.innerHTML = `<p class="notice">No boxes in this room yet. Tap <b>+ New box</b> to add one here.</p>`; return; }
+  if (!boxes.length) { el.innerHTML = `<p class="notice">Nothing in this room yet. Tap <b>+ Box</b> or <b>+ Spot</b> to add one here.</p>`; return; }
   if (S.room === "all" && S.rooms.length) {
     const groups = [...S.rooms.map((r) => [r.name, boxes.filter((b) => b.room === r.id)]), ["No room", boxes.filter((b) => !roomName(b.room))]].filter(([, bs]) => bs.length);
     el.innerHTML = groups.map(([name, bs]) => `<section class="group"><h2>${esc(name)}<span class="n">${bs.length}</span></h2><div class="grid">${bs.map(boxCard).join("")}</div></section>`).join("");
@@ -496,7 +571,7 @@ function renderSearch(q) {
   const terms = q.split(/\s+/).filter(Boolean);
   const hits = [];
   for (const b of sorted()) {
-    const meta = [b.name, b.category, b.location, roomName(b.room), "box " + b.number, "box " + num(b.number)].join(" ").toLowerCase();
+    const meta = [b.name, b.category, b.location, roomName(b.room), isSpot(b) ? "spot" : "box " + b.number + " box " + num(b.number)].join(" ").toLowerCase();
     const metaAll = terms.every((t) => meta.includes(t));
     const its = (b.items || []).filter((i) => {
       const own = (i.name + " " + (i.note || "")).toLowerCase();
@@ -504,16 +579,18 @@ function renderSearch(q) {
     });
     if (metaAll || its.length) hits.push({ b, its });
   }
-  if (!hits.length) { $("#list").innerHTML = `<p class="notice">Nothing matches “${esc(q)}”. Try a shorter word, like “cable” instead of “cables”.</p>`; return; }
-  $("#list").innerHTML = `<div class="results">${hits.map(({ b, its }) => {
+  const tracked = Object.values(S.things).filter((t) => terms.every((x) => (t.name + " " + t.note + " " + t.code).toLowerCase().includes(x)));
+  if (!hits.length && !tracked.length) { $("#list").innerHTML = `<p class="notice">Nothing matches “${esc(q)}”. Try a shorter word, like “cable” instead of “cables”.</p>`; return; }
+  $("#list").innerHTML = (tracked.length ? `<section class="group"><h2>Tracked<span class="n">${tracked.length}</span></h2><div class="tlist">${tracked.map(thingCard).join("")}</div></section>` : "")
+    + `<div class="results">${hits.map(({ b, its }) => {
     const spots = its.filter((i) => i.loc), plain = its.filter((i) => !i.loc);
     const where = [roomName(b.room), b.location && "at " + b.location].filter(Boolean).map((s) => hl(s, terms)).join(" · ");
     return `<div class="hit">
-      <button class="tag" data-open="${b.number}" aria-label="Open box ${num(b.number)}"><small>BOX</small>${num(b.number)}</button>
+      <button class="tag-btn" style="border:none;background:none;padding:0" data-open="${b.id}" aria-label="Open ${esc(placeShort(b))}">${placeTag(b)}</button>
       <span class="meta">
-        <button class="linkbtn" style="color:inherit;text-decoration:none;text-align:left" data-open="${b.number}"><b>${b.name ? hl(b.name, terms) : "Box " + num(b.number)}</b>${where ? ` <span class="hint">· ${where}</span>` : ""}</button>
-        ${spots.length ? `<span class="finds">${spots.slice(0, 8).map((i) => `<button class="find" data-spot="${b.number}|${esc(i.id)}">
-            <canvas data-crop="${b.number}|${esc(i.id)}" aria-label="${esc(i.name)} in the photo"></canvas>
+        <button class="linkbtn" style="color:inherit;text-decoration:none;text-align:left" data-open="${b.id}"><b>${b.name ? hl(b.name, terms) : esc(placeShort(b))}</b>${where ? ` <span class="hint">· ${where}</span>` : ""}</button>
+        ${spots.length ? `<span class="finds">${spots.slice(0, 8).map((i) => `<button class="find" ${lbAttrs(photoSrc(b, i.loc.photo), i.loc.box, i.name + " · " + placeShort(b) + (roomName(b.room) ? " · " + roomName(b.room) : ""))}>
+            <canvas ${cropAttrs(photoSrc(b, i.loc.photo), i.loc.box)} aria-label="${esc(i.name)} in the photo"></canvas>
             <span class="cap">${(i.qty || 1) > 1 ? i.qty + "× " : ""}${hl(i.name, terms)}${i.note ? `<small>${hl(i.note, terms)}</small>` : ""}</span></button>`).join("")}</span>` : ""}
         ${plain.length ? `<span class="chips">${plain.slice(0, 12).map((i) => `<span class="chip">${(i.qty || 1) > 1 ? i.qty + "× " : ""}${hl(i.name, terms)}</span>`).join("")}</span>` : ""}
       </span>
@@ -528,13 +605,11 @@ function loadImg(src) {
   if (!imgCache.has(src)) imgCache.set(src, new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }));
   return imgCache.get(src);
 }
-function findItem(ref) { const [n, id] = ref.split("|"); const b = S.boxes.get(n); return b && { b, it: (b.items || []).find((i) => i.id === id) }; }
 function drawCrops(root) {
   const tape = getComputedStyle(document.documentElement).getPropertyValue("--tape").trim() || "#F5C518";
-  root.querySelectorAll("canvas[data-crop]").forEach(async (cv) => {
-    const f = findItem(cv.dataset.crop); if (!f?.it?.loc) return;
-    let img; try { img = await loadImg(photoSrc(f.b, f.it.loc.photo)); } catch { return; }
-    const W = img.naturalWidth, Hh = img.naturalHeight, [l, t, r, bt] = f.it.loc.box;
+  root.querySelectorAll("canvas[data-box]").forEach(async (cv) => {
+    let img; try { img = await loadImg(cv.dataset.src); } catch { return; }
+    const W = img.naturalWidth, Hh = img.naturalHeight, [l, t, r, bt] = cv.dataset.box.split(",").map(Number);
     const x1 = l / 1000 * W, y1 = t / 1000 * Hh, x2 = r / 1000 * W, y2 = bt / 1000 * Hh;
     const cw = cv.clientWidth || 44, ch = cv.clientHeight || 44, aspect = cw / ch;
     // Region: the item plus some context, shaped to the canvas, kept inside the photo.
@@ -560,18 +635,17 @@ function lightbox(src, box, caption) {
   document.body.append(lb);
 }
 document.addEventListener("click", (e) => {
-  const s = e.target.closest("[data-spot]"); if (!s) return;
-  const f = findItem(s.dataset.spot); if (!f?.it?.loc) return;
-  lightbox(photoSrc(f.b, f.it.loc.photo), f.it.loc.box, `${esc(f.it.name)} · Box ${num(f.b.number)}${roomName(f.b.room) ? " · " + esc(roomName(f.b.room)) : ""}`);
+  const s = e.target.closest("[data-lb-src]"); if (!s) return;
+  lightbox(s.dataset.lbSrc, s.dataset.lbBox ? s.dataset.lbBox.split(",").map(Number) : null, esc(s.dataset.lbCap));
 });
 
 function renderDetail() {
   const b = S.boxes.get(S.open);
-  if (!b) { show("list"); render(); return; }
+  if (!b) { if (S.view === "detail") { show("list"); render(); } return; }
   $("#d-head").innerHTML = `<div class="dhead">
-    <span class="tag big"><small>BOX</small>${num(b.number)}</span>
+    ${placeTag(b, "big")}
     <div class="fields">
-      <div class="field"><label for="f-name">Name</label><input id="f-name" class="title" data-f="name" value="${esc(b.name)}" placeholder="e.g. Cables & chargers"></div>
+      <div class="field"><label for="f-name">Name</label><input id="f-name" class="title" data-f="name" value="${esc(b.name)}" placeholder="${isSpot(b) ? "e.g. Laundry basket" : "e.g. Cables & chargers"}"></div>
       <div class="two">
         <div class="field"><label for="f-room">Room</label><select id="f-room" class="field-sel">
           <option value="">No room</option>${S.rooms.map((r) => `<option value="${esc(r.id)}" ${r.id === b.room ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
@@ -579,12 +653,14 @@ function renderDetail() {
           <input id="f-newroom" hidden placeholder="New room name, then Enter" style="margin-top:6px"></div>
         <div class="field"><label for="f-loc">Spot in the room</label><input id="f-loc" data-f="location" value="${esc(b.location)}" placeholder="e.g. Closet, top shelf"></div>
       </div>
-      <div class="field"><label for="f-cat">Category</label><input id="f-cat" list="cats" data-f="category" value="${esc(b.category)}" placeholder="Pick or type"></div>
+      ${isSpot(b) ? `<div class="field"><label for="f-sets">When tracked items are seen here, set them to</label><select id="f-sets" class="field-sel">
+          <option value="">Don't change their status</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${b.setsStatus === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>`
+        : `<div class="field"><label for="f-cat">Category</label><input id="f-cat" list="cats" data-f="category" value="${esc(b.category)}" placeholder="Pick or type"></div>`}
     </div></div>`;
 
   const photos = b.photos || [];
   $("#d-photos").innerHTML = `<div class="photos">
-    ${photos.map((p) => `<div class="ph"><img src="${photoSrc(b, p)}" alt="Photo of box ${num(b.number)}" data-zoom="${esc(p)}" loading="lazy">
+    ${photos.map((p) => `<div class="ph"><img src="${photoSrc(b, p)}" alt="Photo of ${esc(placeShort(b))}" data-zoom="${esc(p)}" loading="lazy">
       <button class="x" data-rmph="${esc(p)}" aria-label="Remove photo">✕</button></div>`).join("")}
     <label class="addph">
       <input id="photoin" type="file" accept="image/*" multiple ${S.busy ? "disabled" : ""}>
@@ -597,12 +673,15 @@ function renderDetail() {
   $("#rescan").disabled = S.busy;
   $("#d-items").innerHTML = `<ul class="items">${items.length ? items.map((i) => `
     <li data-iid="${esc(i.id)}" class="${S.fresh.has(i.id) ? "fresh" : ""}">
-      ${i.loc ? `<button class="spot" data-spot="${b.number}|${esc(i.id)}" aria-label="Show ${esc(i.name)} in the photo"><canvas data-crop="${b.number}|${esc(i.id)}"></canvas></button>` : "<span></span>"}
+      ${i.loc ? `<button class="spot" ${lbAttrs(photoSrc(b, i.loc.photo), i.loc.box, i.name + " · " + placeShort(b))} aria-label="Show ${esc(i.name)} in the photo"><canvas ${cropAttrs(photoSrc(b, i.loc.photo), i.loc.box)}></canvas></button>` : "<span></span>"}
       <input class="qty" type="number" min="1" inputmode="numeric" value="${Number(i.qty) || 1}" data-if="qty" aria-label="Quantity">
       <span class="nm"><input value="${esc(i.name)}" data-if="name" aria-label="Item name">${i.note ? `<span class="note">${esc(i.note)}</span>` : ""}</span>
+      ${trackedFrom(b, i) ? `<button class="trk on" data-thing="${esc(trackedFrom(b, i).id)}">Tracked</button>` : `<button class="trk" data-track="${esc(i.id)}" title="Track where this goes">Track</button>`}
       <button class="del" data-delitem="${esc(i.id)}" aria-label="Remove ${esc(i.name)}">✕</button>
     </li>`).join("") : `<li style="display:block"><span class="none">Nothing listed yet. Add a photo and Claude will list what's inside, or type items below.</span></li>`}</ul>`;
   drawCrops($("#d-items"));
+  renderSeen(b);
+  $("#delbox").textContent = isSpot(b) ? "Delete spot" : "Delete box";
   $("#updated").textContent = b.updatedAt ? "Updated " + new Date(b.updatedAt).toLocaleString() : "";
 }
 
@@ -621,23 +700,34 @@ function openBox(id) {
   if (!S.busy) setStatus(null);
   renderDetail();
 }
-function backToList() { show("list"); render(); }
+function backToList() { show(S.tab === "list" || !S.tab ? "list" : S.tab); render(); }
 document.addEventListener("click", (e) => {
   if (e.target.closest("[data-back]")) return backToList();
   const o = e.target.closest("[data-open]"); if (o) return openBox(o.dataset.open);
   if (e.target.closest('[data-act="new"]')) return newBox();
 });
 $("#gear").onclick = () => { show("settings"); renderSettings(); };
+document.addEventListener("click", (e) => {
+  const tb = e.target.closest("[data-tab]"); if (tb) { $("#banner").innerHTML = ""; show(tb.dataset.tab); render(); return; }
+  const th = e.target.closest("[data-thing]"); if (th) return openThing(th.dataset.thing);
+});
 
 async function newBox() {
   $("#newbox").disabled = true;
   try {
     const room = S.room !== "all" && S.room !== "none" ? S.room : "";
-    const b = keep(await api("POST", "/api/boxes", { room })); $("#q").value = ""; openBox(b.number);
+    const b = keep(await api("POST", "/api/boxes", { room })); $("#q").value = ""; openBox(b.id);
   } catch (e) { $("#list").insertAdjacentHTML("afterbegin", `<p class="notice">${esc(e.message)}</p>`); }
   finally { $("#newbox").disabled = false; }
 }
 $("#newbox").onclick = newBox;
+$("#newspot").onclick = async () => {
+  try {
+    const room = S.room !== "all" && S.room !== "none" ? S.room : "";
+    const b = keep(await api("POST", "/api/boxes", { kind: "spot", room })); $("#q").value = ""; openBox(b.id);
+    $("#f-name")?.focus();
+  } catch (e) { $("#list").insertAdjacentHTML("afterbegin", `<p class="notice">${esc(e.message)}</p>`); }
+};
 $("#q").addEventListener("input", renderList);
 
 /* ---------- detail edits ---------- */
@@ -652,6 +742,7 @@ $("#detail").addEventListener("change", async (e) => {
     catch (err) { setStatus("err", err.message); }
     return;
   }
+  if (t.id === "f-sets") return patch(S.open, { setsStatus: t.value });
   if (t.dataset.f) { const v = t.value.trim(); if (v !== (b[t.dataset.f] || "")) patch(S.open, { [t.dataset.f]: v }); return; }
   if (t.dataset.if) {
     const iid = t.closest("li").dataset.iid;
@@ -675,6 +766,10 @@ $("#detail").addEventListener("click", async (e) => {
   if (di) { S.undo = { id: S.open, items: b.items }; await patch(S.open, { items: b.items.filter((i) => i.id !== di.dataset.delitem) });
     setStatus("ok", "Item removed.", `<button class="linkbtn" data-undo>Undo</button>`); return; }
   if (e.target.closest("[data-undo]")) { if (S.undo?.id === S.open) { await patch(S.open, { items: S.undo.items }); S.undo = null; setStatus("ok", "Restored."); } return; }
+  const tr = e.target.closest("[data-track]");
+  if (tr) return trackItem(b, b.items.find((i) => i.id === tr.dataset.track));
+  const sy = e.target.closest("[data-seen-yes], [data-seen-no], [data-seen-all]");
+  if (sy) return resolveSeen(b, sy);
   const rp = e.target.closest("[data-rmph]");
   if (rp) {
     if (armed !== rp) return arm(rp, "Remove?");
@@ -691,7 +786,7 @@ $("#additem").addEventListener("submit", (e) => {
 
 $("#delbox").onclick = async (e) => {
   const btn = e.currentTarget; const b = S.boxes.get(S.open); if (!b) return;
-  if (armed !== btn) return arm(btn, `Tap again to delete box ${num(b.number)} and its photos`);
+  if (armed !== btn) return arm(btn, `Tap again to delete ${placeShort(b)} and its photos`);
   disarm();
   try { await api("DELETE", "/api/boxes/" + S.open); S.boxes.delete(S.open); backToList(); }
   catch (err) { setStatus("err", err.message); }
@@ -738,10 +833,11 @@ async function scan(id, photos, mode) {
     S.undo = { id, items: r.before };
     S.fresh = new Set(r.added);
     keep(r.box);
-    const k = r.added.length;
-    setStatus("ok", mode === "add"
+    const k = r.added.length, sg = r.sightings || 0;
+    setStatus("ok", (mode === "add"
       ? (k ? `Added ${k} item${k > 1 ? "s" : ""}. Tap a thumbnail to see where it is; fix anything that's off.` : "No new items spotted in that photo.")
-      : `Re-scanned: ${k} item${k === 1 ? "" : "s"} listed.`, `<button class="linkbtn" data-undo>Undo</button>`);
+      : `Re-scanned: ${k} item${k === 1 ? "" : "s"} listed.`) + (sg ? ` Spotted ${sg} tracked item${sg > 1 ? "s" : ""}: confirm them below.` : ""),
+      `<button class="linkbtn" data-undo>Undo</button>`);
   } catch (e) { setStatus("err", e.message + " The photos are saved; tap Re-scan to try again."); }
 }
 
@@ -883,6 +979,268 @@ async function showRestore(code) {
   $("#backtosetup").onclick = () => { clearTimeout(bkTimer); showAuth(); };
   backupPanel($("#bk"), code);
 }
+
+
+/* ---------- tracked items: home, status, last seen ---------- */
+const STATUS = { clean: "Clean", in_use: "In use", to_wash: "To wash", washing: "Washing", drying: "Drying", lent: "Lent out", missing: "Missing" };
+const STALE_DAYS = 30;
+const pill = (st) => `<span class="pill-s s-${esc(st)}">${esc(STATUS[st] || st)}</span>`;
+function timeAgo(ms) {
+  if (!ms) return "never";
+  const s = (Date.now() - ms) / 1000;
+  if (s < 90) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  if (s < 86400 * 14) return `${Math.round(s / 86400)} day${s < 86400 * 1.5 ? "" : "s"} ago`;
+  return new Date(ms).toLocaleDateString();
+}
+const thingsList = () => Object.values(S.things).sort((a, b) => a.name.localeCompare(b.name));
+const trackedFrom = (b, i) => Object.values(S.things).find((t) => t.from?.place === b.id && t.from?.item === i.id);
+const unaccounted = (t) => t.kind === "group" ? Math.max(0, t.total - Object.values(t.counts || {}).reduce((a, n) => a + n, 0)) : 0;
+const isAway = (t) => t.kind !== "group" && t.home && t.lastSeen?.place && t.lastSeen.place !== t.home;
+const isStale = (t) => !t.lastSeen || Date.now() - t.lastSeen.time > STALE_DAYS * 86400000;
+const refSrc = (t) => `/refs/${t.id}.jpg?v=${t.refAt || 0}`;
+function thingPic(t, cls = "thumb56") {
+  if (t.hasRef) return `<img class="${cls}" src="${refSrc(t)}" alt="" loading="lazy">`;
+  const ls = t.lastSeen, b = ls && S.boxes.get(ls.place);
+  if (b && ls.photo && ls.box) return `<canvas class="${cls}" ${cropAttrs(photoSrc(b, ls.photo), ls.box)}></canvas>`;
+  return `<span class="${cls}">${esc(t.name.slice(0, 1).toUpperCase())}</span>`;
+}
+function whereText(t) {
+  if (t.kind === "group") {
+    const parts = Object.entries(t.counts || {}).map(([k, n]) => `${placeShort(S.boxes.get(k))} ${n}`);
+    const u = unaccounted(t);
+    return (parts.join(" · ") || "Not counted anywhere yet") + (u ? ` · <span class="away">${u} unaccounted</span>` : "");
+  }
+  const ls = t.lastSeen;
+  if (!ls) return "Not seen yet";
+  return `Seen in ${esc(placeShort(S.boxes.get(ls.place)))}, ${timeAgo(ls.time)}${isAway(t) ? ` · <span class="away">away from home</span>` : ""}`;
+}
+function thingCard(t) {
+  return `<button class="tcard" data-thing="${esc(t.id)}">${thingPic(t)}
+    <span class="meta"><span><b>${esc(t.name)}</b> <span class="code">${esc(t.code)}${t.kind === "group" ? ` · ×${t.total}` : ""}</span></span>
+      <span>${pill(t.status)}</span>
+      <span class="sub">${whereText(t)}</span></span></button>`;
+}
+
+async function tpatch(id, data) {
+  try { S.things[id] = await api("PATCH", "/api/things/" + id, data); render(); return S.things[id]; }
+  catch (e) { alert(e.message); }
+}
+
+// A square picture of the item, cut from the photo it was found in.
+async function cropBlob(src, box, size = 360) {
+  const img = await loadImg(src);
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const x1 = box[0] / 1000 * W, y1 = box[1] / 1000 * H, x2 = box[2] / 1000 * W, y2 = box[3] / 1000 * H;
+  let side = Math.min(Math.max(x2 - x1, y2 - y1) * 1.15 + 12, W, H);
+  const sx = Math.max(0, Math.min(W - side, (x1 + x2) / 2 - side / 2)), sy = Math.max(0, Math.min(H - side, (y1 + y2) / 2 - side / 2));
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  c.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, size, size);
+  return new Promise((r) => c.toBlob(r, "image/jpeg", 0.88));
+}
+async function squareFromFile(file, size = 360) {
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const side = Math.min(bmp.width, bmp.height);
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  c.getContext("2d").drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
+  bmp.close?.();
+  return new Promise((r) => c.toBlob(r, "image/jpeg", 0.88));
+}
+
+// One labelled sheet with every tracked item's picture: scans read this single image instead of one per item.
+async function buildSheet() {
+  const withRef = Object.values(S.things).filter((t) => t.hasRef).sort((a, b) => parseInt(a.code.slice(1)) - parseInt(b.code.slice(1))).slice(0, 60);
+  if (!withRef.length) return;
+  const tile = 200, band = 32, cols = Math.min(6, withRef.length), rows = Math.ceil(withRef.length / cols);
+  const c = document.createElement("canvas"); c.width = cols * tile; c.height = rows * (tile + band);
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < withRef.length; i++) {
+    const t = withRef[i], x = (i % cols) * tile, y = Math.floor(i / cols) * (tile + band);
+    try { g.drawImage(await loadImg(refSrc(t)), x + 2, y + 2, tile - 4, tile - 4); } catch {}
+    g.fillStyle = "#111"; g.fillRect(x, y + tile, tile, band);
+    g.fillStyle = "#fff"; g.font = "bold 17px sans-serif";
+    g.fillText(`${t.code} ${t.name}`.slice(0, 20), x + 6, y + tile + 22);
+  }
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
+  await api("PUT", "/api/refsheet", blob, "image/jpeg").catch(() => {});
+}
+
+async function setRef(t, blob) {
+  if (!blob) return;
+  await api("PUT", `/api/things/${t.id}/ref`, blob, "image/jpeg");
+  const db = await api("GET", "/api/boxes"); S.things = db.things; render();
+  buildSheet();
+}
+
+async function trackItem(b, item) {
+  if (!item) return;
+  try {
+    const t = await api("POST", "/api/things", { fromItem: { place: b.id, item: item.id } });
+    S.things[t.id] = t;
+    if (item.loc) await setRef(t, await cropBlob(photoSrc(b, item.loc.photo), item.loc.box));
+    render();
+    setStatus("ok", `Now tracking “${t.name}”. Its home is ${placeShort(b)}.`, `<button class="linkbtn" data-thing="${esc(t.id)}">Open</button>`);
+  } catch (e) { setStatus("err", e.message); }
+}
+
+/* "Seen here" suggestions from the last scan of a place */
+function renderSeen(b) {
+  const el = $("#d-seen"), list = (b.sightings || []).filter((s) => S.things[s.thing]);
+  el.hidden = !list.length;
+  if (!list.length) { el.innerHTML = ""; return; }
+  const rule = b.setsStatus ? ` and sets them to <b>${esc(STATUS[b.setsStatus])}</b>` : "";
+  el.innerHTML = `<div class="bh"><h2>Seen here?</h2><button class="btn ghost" data-seen-all ${S.busy ? "disabled" : ""}>Confirm all</button></div>
+    <p class="hint" style="margin:0">Claude thinks these tracked items are in the photos. Confirming records them as last seen here${rule}.</p>
+    <ul class="rows seen">${list.map((s) => {
+      const t = S.things[s.thing], home = S.boxes.get(t.home);
+      return `<li><span class="pics">${s.box ? `<button class="seenbtn" ${lbAttrs(photoSrc(b, s.photo), s.box, t.name + " · " + placeShort(b))}><canvas ${cropAttrs(photoSrc(b, s.photo), s.box)}></canvas></button>` : ""}</span>
+        <span><b>${esc(t.name)}</b> <span class="code">${esc(t.code)}${t.kind === "group" ? ` · ${s.count} seen` : ""}</span>
+          <span class="sub">${s.confidence} confidence${home ? ` · home: ${esc(placeShort(home))}` : ""}</span></span>
+        <span class="btnrow"><button class="btn ghost" data-seen-yes="${esc(s.id)}">Yes</button><button class="linkbtn" data-seen-no="${esc(s.id)}">Not it</button></span></li>`;
+    }).join("")}</ul>`;
+  drawCrops(el);
+}
+async function resolveSeen(b, btn) {
+  const body = btn.dataset.seenAll !== undefined ? { all: true, accept: true }
+    : { id: btn.dataset.seenYes || btn.dataset.seenNo, accept: btn.dataset.seenYes !== undefined };
+  try { const r = await api("POST", `/api/boxes/${b.id}/sightings`, body); S.things = r.things; keep(r.box); }
+  catch (e) { setStatus("err", e.message); }
+}
+
+/* Tracked list */
+function renderThings() {
+  const all = thingsList(), f = S.tfilter || "all";
+  const filters = { all: ["All", () => true], away: ["Away from home", isAway], stale: [`Not seen in ${STALE_DAYS} days`, isStale],
+    missing: ["Missing", (t) => t.status === "missing" || unaccounted(t) > 0] };
+  const shown = all.filter(filters[f][1]);
+  const homeOpts = (sel) => `<option value="">No home yet</option>` + sorted().map((b) => `<option value="${b.id}" ${b.id === sel ? "selected" : ""}>${esc(placeName(b))}</option>`).join("");
+  $("#t-list").innerHTML = `
+    <div class="bh" style="margin-bottom:10px"><div class="roomrow">${Object.entries(filters).map(([k, [label, fn]]) =>
+      `<button class="rchip" data-tfilter="${k}" aria-pressed="${f === k}">${esc(label)}<span class="n">${all.filter(fn).length}</span></button>`).join("")}</div>
+      <button class="btn tape" data-tnew>+ Track item</button></div>
+    ${S.addingThing ? `<form class="authcard" style="margin:0 0 14px;max-width:none" id="tform">
+      <h2 style="font-size:20px">Track an item</h2>
+      <div class="field"><label for="tn-name">Name</label><input id="tn-name" required placeholder="e.g. Blue hoodie, black sport socks"></div>
+      <div class="two"><div class="field"><label for="tn-kind">What is it</label><select id="tn-kind" class="field-sel">
+          <option value="single">One specific item</option><option value="group">Several look-alikes (socks, towels)</option></select></div>
+        <div class="field" id="tn-totalf" hidden><label for="tn-total">How many in total</label><input id="tn-total" type="number" min="1" value="10"></div></div>
+      <div class="field"><label for="tn-home">Home (where it belongs)</label><select id="tn-home" class="field-sel">${homeOpts("")}</select></div>
+      <div class="field"><label for="tn-pic">Picture (helps Claude recognise it)</label><input id="tn-pic" type="file" accept="image/*"></div>
+      <div class="btnrow"><button class="btn tape" type="submit">Start tracking</button><button class="linkbtn" type="button" data-tcancel>Cancel</button></div>
+      <p class="hint">Tip: you can also tap <b>Track</b> next to anything in a box's contents.</p><p class="err" id="tn-err"></p></form>` : ""}
+    ${all.length ? (shown.length ? `<div class="tlist">${shown.map(thingCard).join("")}</div>` : `<p class="notice">Nothing here. ${f === "away" ? "Everything is at home." : ""}</p>`)
+      : `<div class="empty"><h2>Track the things that wander</h2><ol>
+          <li>Give clothes and other movable things a <b>home</b>: a box, or a spot like a wardrobe shelf.</li>
+          <li>Set a <b>status</b> as they go: in use, to wash, washing, drying, clean.</li>
+          <li>Photograph other places (the laundry basket, a chair, the car). Claude spots your tracked items there, and you confirm.</li>
+          <li>For look-alikes like socks, track a <b>group</b> with a total: the app shows how many are unaccounted for.</li></ol></div>`}`;
+  drawCrops($("#t-list"));
+}
+$("#thingsview").addEventListener("click", (e) => {
+  const fb = e.target.closest("[data-tfilter]"); if (fb) { S.tfilter = fb.dataset.tfilter; return renderThings(); }
+  if (e.target.closest("[data-tnew]")) { S.addingThing = true; renderThings(); return $("#tn-name").focus(); }
+  if (e.target.closest("[data-tcancel]")) { S.addingThing = false; return renderThings(); }
+});
+$("#thingsview").addEventListener("change", (e) => { if (e.target.id === "tn-kind") $("#tn-totalf").hidden = e.target.value !== "group"; });
+$("#thingsview").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = $("#tn-pic").files[0];
+  try {
+    const t = await api("POST", "/api/things", { name: $("#tn-name").value, kind: $("#tn-kind").value, total: $("#tn-total").value, home: $("#tn-home").value });
+    S.things[t.id] = t; S.addingThing = false;
+    if (file) await setRef(t, await squareFromFile(file).catch(() => null));
+    openThing(t.id);
+  } catch (err) { $("#tn-err").textContent = err.message; }
+});
+
+/* One tracked item */
+function openThing(id) { if (!S.things[id]) return; show("thing"); S.openThing = id; renderThing(); }
+function renderThing() {
+  const t = S.things[S.openThing];
+  if (!t) { if (S.view === "thing") { show("things"); renderThings(); } return; }
+  const placeOpts = (sel, none) => (none ? `<option value="">${none}</option>` : "") + sorted().map((b) => `<option value="${b.id}" ${b.id === sel ? "selected" : ""}>${esc(placeName(b))}</option>`).join("");
+  const ls = t.lastSeen, lsBox = ls && S.boxes.get(ls.place);
+  const hist = (t.history || []).slice(0, 15).map((h) => {
+    const pl = h.place !== undefined ? esc(placeShort(S.boxes.get(h.place))) : "";
+    const what = h.what === "created" ? "Started tracking" : h.what === "status" ? `Status: ${esc(STATUS[h.status] || h.status)}${h.source === "place" ? " (from where it was seen)" : ""}`
+      : h.what === "seen" ? `Seen in ${pl}${h.count !== undefined && h.count !== null ? ` (${h.count})` : ""}${h.source === "photo" ? " · from a photo" : ""}` : `Home set to ${pl || "none"}`;
+    return `<li><time>${timeAgo(h.t)}</time><span>${what}</span></li>`;
+  }).join("");
+  $("#t-body").innerHTML = `<div class="thead">
+      <div style="display:grid;gap:8px">${t.hasRef ? `<img class="tpic" src="${refSrc(t)}" alt="">` : `<div class="tpic" style="display:grid;place-items:center;color:var(--muted)">No picture yet</div>`}
+        <label class="btn ghost" style="text-align:center;cursor:pointer">${t.hasRef ? "Change picture" : "Add a picture"}<input id="tp-pic" type="file" accept="image/*" hidden></label></div>
+      <div class="fields">
+        <div class="field"><label for="tp-name">Name <span class="code">${esc(t.code)}</span></label><input id="tp-name" class="title" value="${esc(t.name)}"></div>
+        <div class="field"><label for="tp-note">Note</label><input id="tp-note" value="${esc(t.note)}" placeholder="Colour, brand, size…"></div>
+        <div class="field"><label for="tp-home">Home</label><select id="tp-home" class="field-sel">${placeOpts(t.home, "No home yet")}</select></div>
+      </div></div>
+    <section class="block"><div class="bh"><h2>Status</h2></div>
+      <div class="statusrow">${Object.entries(STATUS).map(([k, v]) => `<button data-status="${k}" aria-pressed="${t.status === k}">${v}</button>`).join("")}</div></section>
+    ${t.kind === "group" ? `<section class="block"><div class="bh"><h2>Where they are</h2>
+        <span class="field" style="display:flex;gap:8px;align-items:center"><label for="tp-total">Total</label><input id="tp-total" type="number" min="1" value="${t.total}" style="width:80px"></span></div>
+      <ul class="rows counts-t">${Object.entries(t.counts || {}).map(([k, n]) => `<li><span>${esc(placeShort(S.boxes.get(k)))}</span>
+        <span class="stepper"><button data-cnt="${k}" data-d="-1" aria-label="One fewer">−</button>${n}<button data-cnt="${k}" data-d="1" aria-label="One more">+</button></span></li>`).join("")}
+        <li><span>${unaccounted(t) ? `<span class="away">${unaccounted(t)} unaccounted for</span>` : "All accounted for"}</span><span></span></li></ul>
+      <div class="btnrow"><select id="tp-cntplace" class="field-sel" style="width:auto;flex:1">${placeOpts("", "Count some at another place…")}</select></div></section>`
+    : `<section class="block"><div class="bh"><h2>Where it is</h2></div>
+      <p style="margin:0">${ls ? `Last seen in <button class="linkbtn" data-open="${esc(ls.place)}">${esc(placeShort(lsBox))}</button>, ${timeAgo(ls.time)}${ls.source === "photo" ? " (from a photo)" : ""}.` : "Not seen anywhere yet."}
+        ${isAway(t) ? `<span class="away">Away from home.</span>` : ""}</p>
+      ${ls && lsBox && ls.photo && ls.box ? `<div><button class="btn ghost" ${lbAttrs(photoSrc(lsBox, ls.photo), ls.box, t.name + " · " + placeShort(lsBox))}>Show in the photo</button></div>` : ""}
+      <div class="btnrow">${t.home ? `<button class="btn tape" data-backhome>Put back home</button>` : ""}
+        <select id="tp-seen" class="field-sel" style="width:auto;flex:1">${placeOpts("", "It's somewhere else now…")}</select></div></section>`}
+    <section class="block"><div class="bh"><h2>History</h2></div><ul class="hist">${hist}</ul></section>
+    <div class="foot"><span class="hint">Tracking since ${new Date(t.createdAt).toLocaleDateString()}</span><button class="btn ghost danger" id="tp-del">Stop tracking</button></div>`;
+}
+$("#thingview").addEventListener("focusout", () => setTimeout(() => {
+  const a = document.activeElement;
+  if (S.pendingThing && !(a && $("#thingview").contains(a) && a.matches("input:not([type=file]), select"))) { S.pendingThing = false; if (S.view === "thing") renderThing(); }
+}, 0));
+$("#thingview").addEventListener("change", async (e) => {
+  const t = S.things[S.openThing], el = e.target; if (!t) return;
+  if (el.id === "tp-name" && el.value.trim() && el.value.trim() !== t.name) { await tpatch(t.id, { name: el.value }); if (t.hasRef) buildSheet(); }
+  if (el.id === "tp-note") tpatch(t.id, { note: el.value });
+  if (el.id === "tp-home") tpatch(t.id, { home: el.value });
+  if (el.id === "tp-total") tpatch(t.id, { total: el.value });
+  if (el.id === "tp-seen" && el.value) tpatch(t.id, { seen: el.value });
+  if (el.id === "tp-cntplace" && el.value) tpatch(t.id, { counts: { [el.value]: (t.counts?.[el.value] || 0) + 1 } });
+  if (el.id === "tp-pic" && el.files[0]) { const blob = await squareFromFile(el.files[0]).catch(() => null); if (blob) await setRef(t, blob); else alert("That file couldn't be opened as a picture."); }
+});
+$("#thingview").addEventListener("click", async (e) => {
+  const t = S.things[S.openThing]; if (!t) return;
+  const sb = e.target.closest("[data-status]"); if (sb) return tpatch(t.id, { status: sb.dataset.status });
+  if (e.target.closest("[data-backhome]")) return tpatch(t.id, { backHome: true });
+  const cb = e.target.closest("[data-cnt]");
+  if (cb) return tpatch(t.id, { counts: { [cb.dataset.cnt]: Math.max(0, (t.counts?.[cb.dataset.cnt] || 0) + Number(cb.dataset.d)) } });
+  const del = e.target.closest("#tp-del");
+  if (del) {
+    if (armed !== del) return arm(del, `Tap again to stop tracking ${t.name}`);
+    disarm();
+    try { await api("DELETE", "/api/things/" + t.id); delete S.things[t.id]; buildSheet(); show("things"); render(); } catch (err) { alert(err.message); }
+  }
+});
+
+/* Laundry board: to wash → washing → drying → clean → put away */
+function renderLaundry() {
+  const all = thingsList();
+  const lanes = [
+    ["in_use", "In use", "Worn", "to_wash"], ["to_wash", "To wash", "Washing", "washing"], ["washing", "Washing", "Hang to dry", "drying"],
+    ["drying", "Drying", "Dry", "clean"], ["clean", "Clean, not put away", "Put away", "home"]];
+  const inLane = (st) => all.filter((t) => st === "clean" ? t.status === "clean" && isAway(t) : t.status === st);
+  const total = lanes.reduce((n, [st]) => n + inLane(st).length, 0);
+  $("#l-body").innerHTML = total ? lanes.map(([st, title, action, next]) => {
+    const ts = inLane(st);
+    return ts.length ? `<section class="lane"><h2>${title}<span class="n">${ts.length}</span></h2>${ts.map((t) => `<div class="lcard">${thingPic(t)}
+      <button class="meta" data-thing="${esc(t.id)}"><b>${esc(t.name)}</b><span class="sub">${whereText(t)}</span></button>
+      <button class="btn ghost" data-advance="${esc(t.id)}" data-next="${next}">${action}</button></div>`).join("")}</section>` : "";
+  }).join("") : `<div class="empty"><h2>Nothing in the wash</h2><p>Tracked items show up here when they're in use, waiting to be washed, washing, drying, or clean but not put away.
+    Set a status on a tracked item, or make the laundry basket a spot that sets “To wash”.</p></div>`;
+  drawCrops($("#l-body"));
+}
+$("#laundryview").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-advance]"); if (!a) return;
+  tpatch(a.dataset.advance, a.dataset.next === "home" ? { backHome: true } : { status: a.dataset.next });
+});
 
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {

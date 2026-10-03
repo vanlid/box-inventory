@@ -26,6 +26,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import backup as BK
+import things as TH
 import webauthn as W
 
 ROOT = Path(__file__).resolve().parent
@@ -44,6 +45,7 @@ def load_env_file():
 load_env_file()
 DATA = ROOT / "data"
 PHOTOS = DATA / "photos"
+REFS = DATA / "refs"  # reference pictures of tracked items, plus sheet.jpg with all of them
 DB_FILE = DATA / "inventory.json"
 AUTH_FILE = DATA / "auth.json"
 SETUP_FILE = DATA / "setup-code.txt"
@@ -101,6 +103,12 @@ def load():
     db = json.loads(DB_FILE.read_text("utf-8")) if DB_FILE.exists() else {}
     db.setdefault("boxes", {})
     db.setdefault("rooms", [])
+    db.setdefault("things", {})
+    for k, b in db["boxes"].items():  # places: numbered boxes, or spots like "laundry basket"
+        b.setdefault("id", k)
+        b.setdefault("kind", "box")
+        b.setdefault("setsStatus", "")
+        b.setdefault("sightings", [])
     return db
 
 
@@ -220,6 +228,16 @@ SCHEMA = {
     "properties": {
         "suggestedName": {"type": "string"},
         "category": {"type": "string", "enum": CATEGORIES},
+        "sightings": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "Tracked item code, e.g. T3"},
+                "photo": {"type": "integer"},
+                "box": {"type": "array", "items": {"type": "integer"}},
+                "count": {"type": "integer", "description": "How many of it you see (for groups)"},
+                "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+            },
+            "required": ["code", "photo", "box", "confidence"]}},
         "items": {"type": "array", "items": {
             "type": "object",
             "properties": {
@@ -236,7 +254,7 @@ SCHEMA = {
 }
 
 
-def scan(box, photo_paths, known):
+def scan(box, photo_paths, known, tracked=()):
     claude = find_claude()
     if not claude:
         raise RuntimeError("The claude command wasn't found on this computer. Install Claude Code and log in once.")
@@ -244,7 +262,24 @@ def scan(box, photo_paths, known):
     known_txt = ("Items already recorded for this box. Don't list these again, unless you clearly see more of them "
                  "or one has no position yet:\n" + "\n".join(f"- {i['qty']}x {i['name']}" for i in known) + "\n\n") if known else ""
     title = f' ("{box["name"]}")' if box.get("name") else ""
-    prompt = f"""You are cataloguing the contents of numbered storage box {box['number']}{title} so the owner can search for things later.
+    where = (f"numbered storage box {box['number']}{title}" if box.get("kind", "box") == "box"
+             else f'the place "{box.get("name") or "unnamed spot"}" (a spot in a room, not a box)')
+    sheet = REFS / "sheet.jpg"
+    track_txt = ""
+    if tracked:
+        lines = "\n".join(f"- {t['code']}: {t['name']}" + (f" ({t['note']})" if t.get("note") else "")
+                          + (f" [group of {t['total']} look-alikes: count how many you see]" if t["kind"] == "group" else "")
+                          + ("" if t.get("hasRef") else " [no picture, match by description]") for t in tracked)
+        track_txt = f"""
+The owner also tracks these specific items, to know where each one is:
+{lines}
+{f"Their reference pictures are tiles labelled with the code in this sheet (Read it too): {sheet}" if sheet.exists() and any(t.get("hasRef") for t in tracked) else ""}
+In "sightings", report each tracked item you can see in the photos, with the photo number, a tight box
+around it, and confidence. Only report it when it looks like that same item (colour, pattern, print), not
+just the same kind of thing; use "low" when unsure. For groups, put how many you see in "count".
+Still list everything in "items" as usual, tracked or not.
+"""
+    prompt = f"""You are cataloguing the contents of {where} so the owner can search for things later.
 Use the Read tool to look at each of these photos:
 {files}
 
@@ -257,12 +292,13 @@ Use the Read tool to look at each of these photos:
 - For each item give "photo" (the photo number where it's most visible) and "box": a tight rectangle
   [left, top, right, bottom] around it in that photo, measured from the top-left corner, each from 0 to 1000
   as a fraction of the image width (left/right) and height (top/bottom). For a group of identical items, cover the group.
-Also suggest a short 2-4 word name for the box and pick a category."""
+Also suggest a short 2-4 word name for the box and pick a category.
+{track_txt}"""
     cmd = [claude, "-p", prompt,
            "--output-format", "json",
            "--json-schema", json.dumps(SCHEMA),
            "--tools", "Read", "--allowedTools", "Read",
-           "--add-dir", str(PHOTOS),
+           "--add-dir", str(PHOTOS), "--add-dir", str(REFS),
            "--model", MODEL,
            "--no-session-persistence", "--strict-mcp-config"]
     # Drop variables inherited from a parent Claude Code session so the CLI uses this machine's own login.
@@ -559,6 +595,12 @@ class H(BaseHTTPRequestHandler):
         if m and cmd == "GET":
             f = PHOTOS / m.group(1) / m.group(2)
             return self.send(200, f.read_bytes(), "image/jpeg") if f.exists() else self.fail(404, "Photo not found")
+        m = re.fullmatch(r"/refs/(\w+)\.jpg", p)
+        if m and cmd == "GET":
+            f = REFS / f"{m.group(1)}.jpg"
+            return self.send(200, f.read_bytes(), "image/jpeg") if f.exists() else self.fail(404, "No picture")
+        if p.startswith("/api/things") or p == "/api/refsheet":
+            return self.things_route(p)
         if p == "/api/boxes" and cmd == "GET":
             with lock:
                 return self.send(200, load())
@@ -566,12 +608,16 @@ class H(BaseHTTPRequestHandler):
             req = self.json_body() or {}
             with lock:
                 db = load()
-                n = max([int(k) for k in db["boxes"]] + [0]) + 1
+                key = str(max([int(k) for k in db["boxes"]] + [0]) + 1)
+                kind = "spot" if req.get("kind") == "spot" else "box"
+                # Box numbers are for the labels on real boxes, so spots don't use them up.
+                number = max([b["number"] or 0 for b in db["boxes"].values() if b["kind"] == "box"] + [0]) + 1 if kind == "box" else None
                 room = req.get("room") if any(r["id"] == req.get("room") for r in db["rooms"]) else ""
-                db["boxes"][str(n)] = {"number": n, "name": "", "category": "", "location": "", "room": room,
-                                       "items": [], "photos": [], "createdAt": now_ms(), "updatedAt": now_ms()}
+                db["boxes"][key] = {"id": key, "kind": kind, "number": number, "name": str(req.get("name", "")).strip()[:80],
+                                    "category": "", "location": "", "room": room, "setsStatus": "", "sightings": [],
+                                    "items": [], "photos": [], "createdAt": now_ms(), "updatedAt": now_ms()}
                 save(db)
-                return self.send(200, db["boxes"][str(n)])
+                return self.send(200, db["boxes"][key])
 
         if p == "/api/rooms" and cmd == "POST":
             name = str((self.json_body() or {}).get("name", "")).strip()[:40]
@@ -605,7 +651,7 @@ class H(BaseHTTPRequestHandler):
                 save(db)
             return self.send(200, {"rooms": db["rooms"]})
 
-        m = re.fullmatch(r"/api/boxes/(\d+)(/photos(?:/([\w.-]+))?|/scan)?", p)
+        m = re.fullmatch(r"/api/boxes/(\d+)(/photos(?:/([\w.-]+))?|/scan|/sightings)?", p)
         if not m:
             return self.fail(404, "Not found")
         key, sub, photo = m.groups()
@@ -613,6 +659,18 @@ class H(BaseHTTPRequestHandler):
             return self.do_scan(key)
         if sub == "/photos" and cmd == "PUT":
             return self.add_photo(key)
+        if sub == "/sightings" and cmd == "POST":  # confirm or dismiss "seen here" suggestions
+            req = self.json_body() or {}
+            with lock:
+                db = load()
+                place = db["boxes"].get(key)
+                if not place:
+                    return self.fail(404, "Place not found")
+                ids = [s["id"] for s in place["sightings"]] if req.get("all") else [str(req.get("id", ""))]
+                for sid in ids:
+                    TH.resolve_sighting(db, key, sid, bool(req.get("accept")))
+                save(db)
+                return self.send(200, {"box": place, "things": db["things"]})
         if sub is None and cmd == "PATCH":
             req = self.json_body()
             if req is None:
@@ -627,6 +685,8 @@ class H(BaseHTTPRequestHandler):
                         box[f] = str(req[f]).strip()[:80]
                 if "room" in req and (req["room"] == "" or any(r["id"] == req["room"] for r in db["rooms"])):
                     box["room"] = req["room"]
+                if "setsStatus" in req and req["setsStatus"] in [""] + TH.STATUSES:
+                    box["setsStatus"] = req["setsStatus"]
                 if "items" in req and isinstance(req["items"], list):
                     box["items"] = [x for x in (clean_item(i, box["photos"]) for i in req["items"]) if x]
                 box["updatedAt"] = now_ms()
@@ -645,10 +705,12 @@ class H(BaseHTTPRequestHandler):
                         for it in box["items"]:
                             if it.get("loc", {}).get("photo") == photo:
                                 del it["loc"]
+                        TH.photo_removed(db, key, photo)
                     box["updatedAt"] = now_ms()
                     save(db)
                     return self.send(200, box)
                 del db["boxes"][key]
+                TH.place_removed(db, key)
                 shutil.rmtree(PHOTOS / key, ignore_errors=True)
                 save(db)
             return self.send(200, {"deleted": int(key)})
@@ -688,7 +750,9 @@ class H(BaseHTTPRequestHandler):
         if not names:
             return self.fail(400, "This box has no photos to scan.")
         try:
-            res = scan(box, [str(PHOTOS / key / n) for n in names], box["items"] if mode == "add" else [])
+            with lock:
+                tracked = list(load()["things"].values())
+            res = scan(box, [str(PHOTOS / key / n) for n in names], box["items"] if mode == "add" else [], tracked)
         except subprocess.TimeoutExpired:
             return self.fail(504, "The scan took too long. Try fewer photos at a time.")
         except Exception as e:
@@ -723,11 +787,73 @@ class H(BaseHTTPRequestHandler):
                 box["items"] = found
             if not box["name"] and res.get("suggestedName"):
                 box["name"] = str(res["suggestedName"])[:60]
-            if not box["category"] and res.get("category") in CATEGORIES:
+            if not box["category"] and res.get("category") in CATEGORIES and box["kind"] == "box":
                 box["category"] = res["category"]
+            seen = TH.sightings_from_scan(db, key, res.get("sightings"), names)
             box["updatedAt"] = now_ms()
             save(db)
-        self.send(200, {"box": box, "added": [i["id"] for i in added], "before": before})
+        self.send(200, {"box": box, "added": [i["id"] for i in added], "before": before, "sightings": len(seen)})
+
+    # --- tracked items ---
+    def things_route(self, p):
+        cmd = self.command
+        if p == "/api/refsheet" and cmd == "PUT":  # one picture with every tracked item, made by the page
+            return self.save_jpeg(REFS / "sheet.jpg")
+        if p == "/api/things" and cmd == "POST":
+            with lock:
+                db = load()
+                try:
+                    t = TH.new_thing(db, self.json_body() or {})
+                except ValueError as e:
+                    return self.fail(400, str(e))
+                save(db)
+            return self.send(200, t)
+        m = re.fullmatch(r"/api/things/(\w+)(/ref)?", p)
+        if not m:
+            return self.fail(404, "Not found")
+        tid, ref = m.groups()
+        if ref and cmd == "PUT":
+            r = self.save_jpeg(REFS / f"{tid}.jpg", check=lambda db: tid in db["things"])
+            with lock:
+                db = load()
+                if tid in db["things"] and (REFS / f"{tid}.jpg").exists():
+                    db["things"][tid]["hasRef"] = True
+                    db["things"][tid]["refAt"] = now_ms()
+                    save(db)
+            return r
+        with lock:
+            db = load()
+            t = db["things"].get(tid)
+            if not t:
+                return self.fail(404, "Item not found")
+            if cmd == "PATCH":
+                TH.patch_thing(db, t, self.json_body() or {})
+                save(db)
+                return self.send(200, t)
+            if cmd == "DELETE":
+                del db["things"][tid]
+                for b in db["boxes"].values():
+                    b["sightings"] = [s for s in b.get("sightings", []) if s["thing"] != tid]
+                (REFS / f"{tid}.jpg").unlink(missing_ok=True)
+                save(db)
+                return self.send(200, {"deleted": tid})
+        return self.fail(404, "Not found")
+
+    def save_jpeg(self, path, check=None):
+        try:
+            data = self.body()
+        except ValueError:
+            return self.fail(413, "Picture is too large.")
+        if not data.startswith(b"\xff\xd8"):
+            return self.fail(415, "Only JPEG pictures are accepted.")
+        with lock:
+            if check and not check(load()):
+                return self.fail(404, "Item not found")
+            REFS.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_bytes(data)
+            tmp.replace(path)
+        return self.send(200, {"ok": True})
 
 
 if __name__ == "__main__":
@@ -736,6 +862,7 @@ if __name__ == "__main__":
     if "--port" in sys.argv:
         PORT = int(sys.argv[sys.argv.index("--port") + 1])
     PHOTOS.mkdir(parents=True, exist_ok=True)
+    REFS.mkdir(parents=True, exist_ok=True)
     c = find_claude()
     claude_auth = ("token from .claude-token" if TOKEN_FILE.exists() and TOKEN_FILE.read_text().strip() else "token from CLAUDE_CODE_OAUTH_TOKEN") if oauth_token() else "this computer's Claude login"
     print(f"Box Inventory on http://0.0.0.0:{PORT}  (claude: {c or 'NOT FOUND - scans will fail'}; auth: {claude_auth})", flush=True)

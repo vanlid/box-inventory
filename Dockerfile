@@ -16,7 +16,7 @@ ENV PATH="/home/app/.local/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PORT=8765
 
-COPY --chown=app:app server.py webauthn.py backup.py index.html ./
+COPY --chown=app:app server.py webauthn.py backup.py things.py index.html ./
 RUN mkdir -p data
 
 # Start as root only to fix ownership of the mounted ./data (Docker creates it as root), then run as app.

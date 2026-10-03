@@ -16,6 +16,26 @@ photo scans use your Claude subscription through Claude Code, so you don't need 
 Each installer copies the token from `CLAUDE_CODE_OAUTH_TOKEN` into `.claude-token`, a file
 only your user can read, because background services don't see your shell's variables.
 
+## Tracking clothes and things that move around
+
+Besides numbered **boxes**, add **spots**: places that aren't boxes, like a wardrobe shelf, the
+laundry basket, the drying rack or a chair. Spots don't use up box numbers.
+
+Tap **Track** next to anything in a box's contents (or **Tracked → + Track item**) to follow it:
+
+- **Home**: where it belongs. Items seen somewhere else show up under **Away from home**.
+- **Status**: clean, in use, to wash, washing, drying, lent out, missing. The **Laundry** tab moves
+  things along: to wash → washing → drying → clean → put away.
+- **Last seen**: photograph any place and Claude also looks for your tracked items there, using
+  their pictures. It suggests sightings under **Seen here?** and you confirm them.
+- A spot can set the status: make the laundry basket set "To wash", so anything confirmed there is
+  marked for washing.
+- **Look-alikes** such as socks: track a group with a total ("black sport socks, 12"). Counts are
+  kept per place, and the app shows how many are unaccounted for.
+
+Recognition works best on distinctive items (a patterned sock, a specific hoodie). Identical items
+can't be told apart, which is why groups are counted instead.
+
 ## Sign-in with passkeys (HTTPS via Tailscale)
 
 The app is protected by passkeys (fingerprint, face or screen lock). Browsers only allow passkeys
@@ -116,7 +136,8 @@ To remove the service: `./install-mac.sh uninstall`, `./install-linux.sh uninsta
 
 - `data/inventory.json`: rooms, boxes and items, including where each item is in its photo (readable JSON)
 - `data/auth.json`: registered passkeys (public keys only) and sign-in sessions
-- `data/photos/<box number>/`: the photos
+- `data/photos/<place id>/`: the photos
+- `data/refs/`: reference pictures of tracked items, and `sheet.jpg` with all of them for scans
 - `data/backup.json`: which drive is connected, and its sign-in token (readable only by you)
 - Besides the built-in drive backups, copying the `data/` folder is a complete backup too.
 
