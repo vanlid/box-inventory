@@ -83,7 +83,8 @@ your LAN port. Use `TS_HOSTNAME` in `.env` for a different device name.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google Drive backups | See "Backups" below. |
 | `MS_CLIENT_ID` | For OneDrive backups | See "Backups" below. |
 | `MS_TENANT` | Rarely | `consumers` (default) for personal Microsoft accounts, `common` to also allow work accounts. |
-| `BACKUP_KEEP` | No | How many backups to keep (default 14). |
+| `BACKUP_LOCAL_DIR` | No | Back up to folders too, e.g. a NAS share or USB disk. Several are separated by `:` (Windows: `;`). |
+| `BACKUP_KEEP` | No | How many backups to keep in each place (default 14). |
 | `PORT` | No | Default 8765. |
 | `CLAUDE_MODEL` | No | Model for scans (default `sonnet`). |
 | `AUTH=off` | No | Turns passkey sign-in off. Only on a network you trust. |
@@ -129,10 +130,12 @@ To run without sign-in (e.g. plain HTTP on a trusted network), set `AUTH=off`.
 
 ## Backups to Google Drive or OneDrive
 
-Settings → **Backups** connects a drive. The app makes a backup once a day when something changed
-(and whenever you tap **Back up now**) and keeps the 14 newest. Each backup is one zip with your
-rooms, boxes, photos and passkeys. Your drive's sign-in token and the device sign-in cookies are
-not included.
+Settings → **Backups** connects one or more places to back up to: Google Drive, OneDrive, and local
+folders, with **several accounts per service** if you like (yours and a family member's Google Drive, say).
+The app makes a backup once a day when something changed (and whenever you tap **Back up now**),
+uploads it to every connected place, and keeps the 14 newest in each. If one place fails, the others
+still get the backup, and the error shows next to that place. Each backup is one zip with your rooms,
+boxes, photos and passkeys. Sign-in tokens and device sign-in cookies are not included.
 
 - Google Drive: a **Box Inventory backups** folder. The app can only see files it created.
 - OneDrive: the app's own folder, **Apps/<your app name>**.

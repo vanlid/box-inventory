@@ -16,6 +16,7 @@ import shutil
 import threading
 import time
 import urllib.error
+import uuid
 import urllib.parse
 import urllib.request
 import zipfile
@@ -324,7 +325,25 @@ class LocalFolder(Provider):
 
 # ---------- manager ----------
 
+LABELS = {"google": "Google Drive", "onedrive": "OneDrive"}
+
+
+def local_dirs():
+    """BACKUP_LOCAL_DIR may list several folders (a NAS share, a USB disk…), separated like PATH."""
+    return [d.strip() for d in os.environ.get("BACKUP_LOCAL_DIR", "").split(os.pathsep) if d.strip()]
+
+
+def local_key(i):
+    return "local" if i == 0 else f"local{i + 1}"
+
+
 class Backups:
+    """Backs up to every connected account at once; each keeps its own sign-in, last backup and error.
+
+    st["targets"] maps a target id to {"provider": "google"|"onedrive"|"local…", "state": {...}, "last", "error"}.
+    One provider can have several targets: two Google accounts, say.
+    """
+
     def __init__(self, data_dir, data_lock, fix_auth):
         """fix_auth(auth_from_backup, origin, current_auth) -> auth dict to write after a restore."""
         self.data = Path(data_dir)
@@ -333,47 +352,77 @@ class Backups:
         self.lock = threading.RLock()
         self.job = None          # {"kind": "backup"|"restore", "progress": str}
         self.pending = None      # device-code sign-in in progress
-        self.st = json.loads(self.file.read_text("utf-8")) if self.file.exists() else {}
+        st = json.loads(self.file.read_text("utf-8")) if self.file.exists() else {}
+        if "provider" in st:     # older single-service format
+            st = {"targets": {st["provider"]: {"state": st.get("state", {}), "last": st.get("last"), "error": st.get("error")}},
+                  "restored": st.get("restored")}
+        st.setdefault("targets", {})
+        for tid, t in st["targets"].items():
+            t.setdefault("provider", tid)  # older targets were keyed by their provider
+        self.st = st
         self.keep = int(os.environ.get("BACKUP_KEEP", "14"))
 
     # config
     def available(self):
         out = []
         if os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"):
-            out.append({"key": "google", "label": "Google Drive"})
+            out.append({"key": "google", "label": LABELS["google"]})
         if os.environ.get("MS_CLIENT_ID"):
-            out.append({"key": "onedrive", "label": "OneDrive"})
-        if os.environ.get("BACKUP_LOCAL_DIR"):
-            out.append({"key": "local", "label": "Local folder"})
+            out.append({"key": "onedrive", "label": LABELS["onedrive"]})
+        dirs = local_dirs()
+        for i, d in enumerate(dirs):
+            out.append({"key": local_key(i), "label": "Local folder" if len(dirs) == 1 else f"Folder: {Path(d).name or d}"})
         return out
 
-    def provider(self, key=None, state=None):
-        key = key or self.st.get("provider")
-        state = state if state is not None else self.st.setdefault("state", {})
+    def provider_label(self, key):
+        return next((a["label"] for a in self.available() if a["key"] == key), LABELS.get(key, key))
+
+    def label(self, tid):
+        """How a target is shown: the service, plus the account when there's one."""
+        t = self.st["targets"].get(tid) or {}
+        account = (t.get("state") or {}).get("account", "")
+        name = self.provider_label(t.get("provider", tid))
+        return f"{name} ({account})" if account and not t.get("provider", "").startswith("local") else name
+
+    def target(self, tid):
+        """The provider object for a connected target, using that target's own sign-in."""
+        t = self.st["targets"][tid]
+        return self.provider(t["provider"], t["state"])
+
+    def provider(self, key, state):
         if key == "google":
             return Google(state, self.save, os.environ.get("GOOGLE_CLIENT_ID", ""), os.environ.get("GOOGLE_CLIENT_SECRET", ""))
         if key == "onedrive":
             return OneDrive(state, self.save, os.environ.get("MS_CLIENT_ID", ""), os.environ.get("MS_TENANT", "consumers"))
-        if key == "local" and os.environ.get("BACKUP_LOCAL_DIR"):
-            return LocalFolder(state, self.save, os.environ["BACKUP_LOCAL_DIR"])
-        raise BackupError("No backup service connected.")
+        dirs = local_dirs()
+        for i, d in enumerate(dirs):
+            if key == local_key(i):
+                return LocalFolder(state, self.save, d)
+        raise BackupError(f"{self.label(key)} isn't configured on this server any more.")
+
+    def connected(self):
+        """Ids of connected targets whose service is still configured, grouped by service."""
+        order = [a["key"] for a in self.available()]
+        ts = [tid for tid, t in self.st["targets"].items() if t["provider"] in order]
+        return sorted(ts, key=lambda tid: order.index(self.st["targets"][tid]["provider"]))
 
     def save(self):
         with self.lock:
             self.data.mkdir(parents=True, exist_ok=True)
             tmp = self.file.with_suffix(".tmp")
             tmp.write_text(json.dumps(self.st, indent=1), "utf-8")
-            os.chmod(tmp, 0o600)  # holds the refresh token
+            os.chmod(tmp, 0o600)  # holds the refresh tokens
             tmp.replace(self.file)
 
     def status(self):
         with self.lock:
-            p = self.st.get("provider")
+            ok = {a["key"] for a in self.available()}
             return {"available": self.available(),
-                    "connected": p and {"key": p, "label": {"google": "Google Drive", "onedrive": "OneDrive", "local": "Local folder"}.get(p, p),
-                                        "account": self.st.get("state", {}).get("account", "")},
-                    "last": self.st.get("last"), "error": self.st.get("error"), "job": self.job, "keep": self.keep,
-                    "restored": self.st.get("restored"),
+                    "targets": [{"key": tid, "provider": t["provider"], "label": self.provider_label(t["provider"]),
+                                 "account": t.get("state", {}).get("account", ""), "last": t.get("last"),
+                                 "error": t.get("error"), "configured": t["provider"] in ok}
+                                for tid, t in sorted(self.st["targets"].items(), key=lambda kv: kv[1]["provider"])],
+                    "error": self.st.get("error"), "job": self.job, "keep": self.keep, "restored": self.st.get("restored"),
                     "pending": self.pending and {k: self.pending[k] for k in ("user_code", "url", "interval", "provider")}}
 
     # sign-in
@@ -404,16 +453,26 @@ class Backups:
             return {"status": "pending", "interval": pend["interval"]}
         with self.lock:
             self.pending = None
-            self.st = {"provider": pend["provider"], "state": r, "last": None, "error": None}
+            key = pend["provider"]
+            # The same account again (or a local folder) refreshes that connection; a new account is added.
+            same = next((tid for tid, t in self.st["targets"].items() if t["provider"] == key
+                         and (key.startswith("local") or (t.get("state") or {}).get("account") == r.get("account"))), None)
+            if same:
+                self.st["targets"][same].update(state=r, error=None)
+            else:
+                tid = key if key not in self.st["targets"] else f"{key}-{uuid.uuid4().hex[:6]}"
+                self.st["targets"][tid] = {"provider": key, "state": r, "last": None, "error": None}
             self.save()
-        return {"status": "connected"}
+        return {"status": "connected", "provider": key}
 
-    def disconnect(self):
+    def disconnect(self, key):
         with self.lock:
             if self.job:
                 raise BackupError("Wait for the current backup or restore to finish.")
-            self.st, self.pending = {}, None
-            self.file.unlink(missing_ok=True)
+            self.st["targets"].pop(key, None)
+            if self.pending and self.pending["provider"] == key:
+                self.pending = None
+            self.save()
 
     # jobs
     def _run(self, kind, fn):
@@ -435,15 +494,16 @@ class Backups:
             finally:
                 with self.lock:
                     self.job = None
-                    if self.st.get("provider"):
-                        self.save()
+                    self.save()
         threading.Thread(target=go, daemon=True).start()
 
-    def backup_now(self):
-        self._run("backup", self._backup)
+    def backup_now(self, keys=None):
+        keys = [k for k in (keys or self.connected()) if k in self.connected()]
+        if not keys:
+            raise BackupError("Connect a backup service first.")
+        self._run("backup", lambda progress: self._backup(keys, progress))
 
-    def _backup(self, progress):
-        p = self.provider()
+    def _backup(self, keys, progress):
         name = time.strftime(ZIP_PREFIX + "%Y%m%d-%H%M%S.zip")
         tmp = self.data / ".backup-upload.zip"
         progress("Packing…")
@@ -461,24 +521,45 @@ class Backups:
                 for f in sorted((self.data / "refs").glob("*.jpg")):
                     z.write(f, f"refs/{f.name}", zipfile.ZIP_STORED)
         try:
-            p.upload(tmp, name, progress)
             size = tmp.stat().st_size
+            for i, key in enumerate(keys):  # one service failing never stops the others
+                label = self.label(key)
+                prefix = f"{label} ({i + 1}/{len(keys)}): " if len(keys) > 1 else ""
+                try:
+                    p = self.target(key)
+                    p.upload(tmp, name, lambda msg: progress(prefix + msg))
+                    progress(prefix + "removing old backups…")
+                    for old in p.list()[self.keep:]:
+                        p.delete(old["id"])
+                    with self.lock:
+                        self.st["targets"][key].update(last={"name": name, "size": size, "time": int(time.time() * 1000)}, error=None)
+                except Exception as e:
+                    msg = str(e) if isinstance(e, BackupError) else f"Unexpected error: {e}"
+                    print(f"backup to {key} failed:", repr(e), flush=True)
+                    with self.lock:
+                        self.st["targets"][key]["error"] = {"message": msg, "time": int(time.time() * 1000)}
         finally:
             tmp.unlink(missing_ok=True)
-        with self.lock:
-            self.st["last"] = {"name": name, "size": size, "time": int(time.time() * 1000)}
-        progress("Removing old backups…")
-        for old in p.list()[self.keep:]:
-            p.delete(old["id"])
 
     def list(self):
-        return self.provider().list()
+        """Backups from every connected service, newest first, plus a note for any that couldn't be listed."""
+        backups, errors = [], []
+        for key in self.connected():
+            try:
+                for f in self.target(key).list():
+                    backups.append({**f, "provider": key, "label": self.label(key)})
+            except BackupError as e:
+                errors.append({"provider": key, "label": self.label(key), "message": str(e)})
+        backups.sort(key=lambda f: f["created"], reverse=True)
+        return {"backups": backups, "errors": errors}
 
-    def restore(self, file_id, origin):
-        self._run("restore", lambda progress: self._restore(file_id, origin, progress))
+    def restore(self, key, file_id, origin):
+        if key not in self.connected():
+            raise BackupError("That backup service isn't connected.")
+        self._run("restore", lambda progress: self._restore(key, file_id, origin, progress))
 
-    def _restore(self, file_id, origin, progress):
-        p = self.provider()
+    def _restore(self, key, file_id, origin, progress):
+        p = self.target(key)
         tmp = self.data / ".restore-download.zip"
         try:
             p.download(file_id, tmp, progress)
@@ -524,7 +605,7 @@ class Backups:
             except BackupError:
                 name = file_id
             with self.lock:
-                self.st["restored"] = {"name": name, "time": int(time.time() * 1000), "previous": keep.name,
+                self.st["restored"] = {"name": name, "from": self.label(key), "time": int(time.time() * 1000), "previous": keep.name,
                                        "boxes": len(inventory["boxes"])}
         finally:
             tmp.unlink(missing_ok=True)
@@ -542,16 +623,25 @@ class Backups:
         newest = max((f.stat().st_mtime for f in files if f.exists()), default=0)
         return newest * 1000 > ms
 
+    def due(self):
+        """Services that need a backup: none in the last day, something changed since, no failure in the last 6 hours."""
+        now = time.time() * 1000
+        out = []
+        for key in self.connected():
+            t = self.st["targets"][key]
+            last = (t.get("last") or {}).get("time", 0)
+            err = (t.get("error") or {}).get("time", 0)
+            if now - last > 24 * 3600 * 1000 and self.changed_since(last) and now - err > 6 * 3600 * 1000:
+                out.append(key)
+        return out
+
     def scheduler(self):
         while True:
             time.sleep(600)
             try:
                 with self.lock:
-                    due = (self.st.get("provider") and not self.job and not self.pending
-                           and (not self.st.get("last") or time.time() * 1000 - self.st["last"]["time"] > 24 * 3600 * 1000)
-                           and self.changed_since((self.st.get("last") or {}).get("time", 0)) and self.has_boxes()
-                           and not (self.st.get("error") and time.time() * 1000 - self.st["error"]["time"] < 6 * 3600 * 1000))
-                if due:
-                    self.backup_now()
+                    keys = [] if self.job or self.pending or not self.has_boxes() else self.due()
+                if keys:
+                    self.backup_now(keys)
             except Exception as e:
                 print("backup scheduler:", repr(e), flush=True)

@@ -172,7 +172,8 @@ button.tag { border: none; cursor: pointer; }
 .rows li:first-child { border-top: none; }
 .rows input { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 6px; min-width: 0; width: 100%; font-weight: 600; }
 .rows input:hover, .rows input:focus { border-color: var(--line); outline: none; background: var(--bg); }
-.rows .sub { font-size: 12px; color: var(--muted); padding: 0 7px; }
+.rows .sub { font-size: 12px; color: var(--muted); padding: 0 7px; overflow-wrap: anywhere; }
+#bk .rows .sub { padding: 0; }
 .pill { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; background: var(--tape); color: var(--tape-ink); border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
 .banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--tape); margin-bottom: 14px; }
 .banner .msg { flex: 1; min-width: 0; }
@@ -877,31 +878,37 @@ function backupPanel(el, setupCode = "") {
 
   function draw(st) {
     if (P.polling) return;
-    if (!st.connected) {
-      el.innerHTML = st.available.length
-        ? `<p>${setupCode ? "Connect the drive your backups are in." : "Keep a copy of everything (boxes, photos, passkeys) in your cloud drive."}</p>
-           <div class="btnrow">${st.available.map((a) => `<button class="btn ghost" data-bk-connect="${esc(a.key)}">Connect ${esc(a.label)}</button>`).join("")}</div>
-           <p class="err" id="bk-err"></p>`
-        : `<p class="hint">To back up to Google Drive or OneDrive, add your client IDs to the <b>.env</b> file on the server and restart it. See “Backups” in the README.</p>`;
+    const job = st.job, targets = st.targets.filter((t) => t.configured), anyOn = targets.length > 0;
+    // Cloud services can have several accounts; a folder is connected once.
+    const has = (a) => st.targets.some((t) => t.provider === a.key);
+    const offers = st.available.filter((a) => !a.key.startsWith("local") || !has(a))
+      .map((a) => ({ ...a, text: has(a) ? `Add another ${a.label} account` : `Connect ${a.label}` }));
+    if (!st.available.length && !st.targets.length) {
+      el.innerHTML = `<p class="hint">To back up to Google Drive or OneDrive, add your client IDs to the <b>.env</b> file on the server and restart it. See “Backups” in the README.</p>`;
       return;
     }
-    const c = st.connected, job = st.job;
-    el.innerHTML = `<p><b>${esc(c.label)}</b>${c.account ? ` · ${esc(c.account)}` : ""}</p>
+    const row = (t) => `<li><span style="display:grid;gap:2px;min-width:0"><span><b>${esc(t.label)}</b>${t.account && !t.provider.startsWith("local") ? ` · ${esc(t.account)}` : ""}</span>
+        <span class="sub">${!t.configured ? "Not configured on this server any more" : setupCode ? "Connected" : t.last ? `Last backup ${fmtWhen(t.last.time)} · ${fmtSize(t.last.size)}` : "No backup yet"}</span>
+        ${t.error ? `<span class="sub err">Last attempt failed: ${esc(t.error.message)}</span>` : ""}</span>
+      ${setupCode ? "" : `<button class="btn ghost danger" data-bk-off="${esc(t.key)}" ${job ? "disabled" : ""}>Disconnect</button>`}</li>`;
+    el.innerHTML = `
+      ${!anyOn ? `<p>${setupCode ? "Connect the drive your backups are in." : "Keep a copy of everything (boxes, photos, passkeys) in one or more places."}</p>` : ""}
+      ${st.targets.length ? `<ul class="rows">${st.targets.map(row).join("")}</ul>` : ""}
+      ${offers.length ? `<div class="btnrow">${offers.map((a) => `<button class="btn ghost" data-bk-connect="${esc(a.key)}" ${job ? "disabled" : ""}>${esc(a.text)}</button>`).join("")}</div>` : ""}
       ${job ? `<div class="st"><span class="spin" aria-hidden="true"></span><span class="msg" role="status">${job.kind === "backup" ? "Backing up" : "Restoring"}: ${esc(job.progress)}</span></div>` : ""}
-      ${setupCode ? "" : `<p class="hint">${st.last ? `Last backup ${fmtWhen(st.last.time)} · ${fmtSize(st.last.size)}` : "No backup yet."} Backs up automatically once a day when something changed, and keeps the ${st.keep} newest.</p>`}
+      ${anyOn && !setupCode ? `<p class="hint">Backs up to ${targets.length === 1 ? "it" : targets.length === 2 ? "both" : `all ${targets.length}`} once a day when something changed, and keeps the ${st.keep} newest in each.</p>` : ""}
       ${st.error && !job ? `<p class="err">${st.error.kind === "backup" ? "Backup" : "Restore"} failed: ${esc(st.error.message)}</p>` : ""}
       ${P.note ? `<p class="okmsg">${esc(P.note)}</p>` : ""}
-      <div class="btnrow">
+      ${anyOn ? `<div class="btnrow">
         ${setupCode ? "" : `<button class="btn tape" data-bk-run ${job ? "disabled" : ""}>Back up now</button>`}
-        <button class="btn ghost" data-bk-list ${job ? "disabled" : ""}>${P.list ? "Refresh list" : "Restore…"}</button>
-        ${setupCode ? "" : `<button class="btn ghost danger" data-bk-off ${job ? "disabled" : ""}>Disconnect</button>`}
-      </div>
-      ${P.list ? (P.list.length ? `<ul class="rows">${P.list.map((f) => `<li><span>${fmtWhen(f.created)}<span class="sub">${fmtSize(f.size)}</span></span>
-          <button class="btn ghost" data-bk-restore="${esc(f.id)}" ${job ? "disabled" : ""}>Restore</button></li>`).join("")}</ul>
+        <button class="btn ghost" data-bk-list ${job ? "disabled" : ""}>${P.list ? "Refresh list" : "Restore…"}</button></div>` : ""}
+      ${P.list ? `${P.list.errors.map((x) => `<p class="err">Couldn't list ${esc(x.label)}: ${esc(x.message)}</p>`).join("")}
+        ${P.list.backups.length ? `<ul class="rows">${P.list.backups.map((f) => `<li><span style="display:grid;gap:2px;min-width:0">${fmtWhen(f.created)}<span class="sub">${esc(f.label)} · ${fmtSize(f.size)}</span></span>
+          <button class="btn ghost" data-bk-restore="${esc(f.provider)}" data-id="${esc(f.id)}" ${job ? "disabled" : ""}>Restore</button></li>`).join("")}</ul>
           <p class="hint">Restoring replaces the boxes, rooms, photos and passkeys here. What's here now is kept in a <b>before-restore</b> folder on the server.</p>`
-        : `<p class="hint">No backups found in ${esc(c.label)} yet.</p>`) : ""}
+        : `<p class="hint">No backups found yet.</p>`}` : ""}
       <p class="err" id="bk-err"></p>`;
-    if (setupCode && !P.list && !job && !P.loadingList) { P.loadingList = true; loadList(); }
+    if (setupCode && anyOn && !P.list && !job && !P.loadingList) { P.loadingList = true; loadList(); }
   }
 
   async function loadList() {
@@ -926,7 +933,7 @@ function backupPanel(el, setupCode = "") {
       try {
         const r = await call("POST", "/api/backup/connect/poll");
         if (r.status === "pending") { wait = r.interval || wait; bkTimer = setTimeout(tick, wait * 1000); return; }
-        P.polling = false; P.note = "Connected."; refresh();
+        P.polling = false; P.note = "Connected."; P.list = null; refresh();
       } catch (e) { P.polling = false; await refresh(); showErr(e.message); }
     };
     bkTimer = setTimeout(tick, d.user_code ? wait * 1000 : 50);
@@ -953,15 +960,15 @@ function backupPanel(el, setupCode = "") {
     if (t.closest("[data-bk-list]")) { P.note = ""; return loadList(); }
     const off = t.closest("[data-bk-off]");
     if (off) {
-      if (armed !== off) return arm(off, "Tap again to disconnect (backups stay in your drive)");
-      disarm(); try { await call("POST", "/api/backup/disconnect"); } catch (err) { return showErr(err.message); }
+      if (armed !== off) return arm(off, "Tap again (backups stay there)");
+      disarm(); try { await call("POST", "/api/backup/disconnect", { provider: off.dataset.bkOff }); } catch (err) { return showErr(err.message); }
       P.list = null; P.note = ""; return refresh();
     }
     const rs = t.closest("[data-bk-restore]");
     if (rs) {
       if (armed !== rs) return arm(rs, "Replace everything here?");
       disarm(); P.note = ""; P.restoring = true;
-      try { await call("POST", "/api/backup/restore", { id: rs.dataset.bkRestore }); } catch (err) { return showErr(err.message); }
+      try { await call("POST", "/api/backup/restore", { provider: rs.dataset.bkRestore, id: rs.dataset.id }); } catch (err) { return showErr(err.message); }
       return refresh();
     }
   };

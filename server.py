@@ -570,7 +570,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/backup/connect/poll" and cmd == "POST":
                 return self.send(200, BACKUPS.connect_poll())
             if p == "/api/backup/disconnect" and cmd == "POST":
-                BACKUPS.disconnect()
+                BACKUPS.disconnect(str(req.get("provider", "")))
                 return self.send(200, BACKUPS.status())
             if p == "/api/backup/run" and cmd == "POST":
                 BACKUPS.backup_now()
@@ -578,9 +578,9 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/backup/list" and cmd == "GET":
                 return self.send(200, BACKUPS.list())
             if p == "/api/backup/restore" and cmd == "POST":
-                if not req.get("id"):
+                if not req.get("id") or not req.get("provider"):
                     return self.fail(400, "Pick a backup to restore.")
-                BACKUPS.restore(str(req["id"]), self.origin() or None)
+                BACKUPS.restore(str(req["provider"]), str(req["id"]), self.origin() or None)
                 return self.send(200, BACKUPS.status())
         except BK.BackupError as e:
             return self.fail(400, str(e))
