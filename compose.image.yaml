@@ -1,0 +1,20 @@
+# Run Box Inventory from the published image: no source code or build needed.
+#   1. Put this file (as docker-compose.yml) and a .env file in an empty folder.
+#   2. docker compose up -d        (update later: docker compose pull && docker compose up -d)
+services:
+  box-inventory:
+    image: ghcr.io/vanlid/box-inventory:latest
+    ports:
+      - "${PORT:-8765}:8765"
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?Set CLAUDE_CODE_OAUTH_TOKEN in .env or your shell}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-sonnet}
+      AUTH: ${AUTH:-on}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_TENANT: ${MS_TENANT:-consumers}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

@@ -25,10 +25,14 @@ CLAUDE="$(command -v claude || ls "$HOME/.local/bin/claude" 2>/dev/null || true)
 [ -z "$PY" ] && { echo "python3 not found. Install it with your package manager (e.g. sudo apt install python3)."; exit 1; }
 [ -z "$CLAUDE" ] && { echo "claude not found. Install Claude Code: curl -fsSL https://claude.ai/install.sh | bash"; exit 1; }
 
+# The token can also live in .env (the one-line installer creates it for you).
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -f "$DIR/.env" ]; then
+  CLAUDE_CODE_OAUTH_TOKEN="$(sed -n 's/^CLAUDE_CODE_OAUTH_TOKEN=//p' "$DIR/.env" | tail -1 | tr -d "\"' ")"
+fi
 # Services don't inherit your shell's variables, so keep an existing env token in .claude-token.
 if [ ! -s "$DIR/.claude-token" ] && [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
   (umask 077; printf '%s\n' "$CLAUDE_CODE_OAUTH_TOKEN" > "$DIR/.claude-token")
-  echo "Using CLAUDE_CODE_OAUTH_TOKEN from your shell (saved to .claude-token)."
+  echo "Using your CLAUDE_CODE_OAUTH_TOKEN (saved to .claude-token)."
 fi
 if [ -s "$DIR/.claude-token" ]; then
   chmod 600 "$DIR/.claude-token"
@@ -38,7 +42,7 @@ if [ -s "$DIR/.claude-token" ]; then
 else
   TOKEN=""
   echo "No .claude-token found; checking this computer's Claude login…"
-  FIX="Claude isn't set up. Set CLAUDE_CODE_OAUTH_TOKEN, run ./save-token.sh, or run 'claude' once and log in."
+  FIX="Claude isn't set up. Put CLAUDE_CODE_OAUTH_TOKEN=... in $DIR/.env (or run ./save-token.sh) and run this again."
 fi
 # Test outside any parent Claude Code session so the result reflects what the service will see.
 if ! env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID ${TOKEN:+CLAUDE_CODE_OAUTH_TOKEN="$TOKEN"} \

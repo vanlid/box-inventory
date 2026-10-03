@@ -20,10 +20,14 @@ CLAUDE="$(command -v claude || ls "$HOME/.local/bin/claude" 2>/dev/null || true)
 [ -z "$PY" ] && { echo "python3 not found. Run: xcode-select --install"; exit 1; }
 [ -z "$CLAUDE" ] && { echo "claude not found. Install Claude Code: curl -fsSL https://claude.ai/install.sh | bash"; exit 1; }
 
+# The token can also live in .env (the one-line installer creates it for you).
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -f "$DIR/.env" ]; then
+  CLAUDE_CODE_OAUTH_TOKEN="$(sed -n 's/^CLAUDE_CODE_OAUTH_TOKEN=//p' "$DIR/.env" | tail -1 | tr -d "\"' ")"
+fi
 # Background services don't inherit your shell's variables, so keep an existing env token in .claude-token.
 if [ ! -s "$DIR/.claude-token" ] && [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
   (umask 077; printf '%s\n' "$CLAUDE_CODE_OAUTH_TOKEN" > "$DIR/.claude-token")
-  echo "Using CLAUDE_CODE_OAUTH_TOKEN from your shell (saved to .claude-token)."
+  echo "Using your CLAUDE_CODE_OAUTH_TOKEN (saved to .claude-token)."
 fi
 if [ -s "$DIR/.claude-token" ]; then
   chmod 600 "$DIR/.claude-token"
@@ -32,7 +36,7 @@ if [ -s "$DIR/.claude-token" ]; then
   FIX="The token in .claude-token didn't work. Run ./save-token.sh to make a new one."
 else
   echo "No .claude-token found; checking this Mac's Claude login…"
-  FIX="Claude isn't set up. Run ./save-token.sh (recommended), or run 'claude' once and log in."
+  FIX="Claude isn't set up. Put CLAUDE_CODE_OAUTH_TOKEN=... in $DIR/.env (or run ./save-token.sh) and run this again."
 fi
 if ! "$CLAUDE" -p "Reply with just: ok" --no-session-persistence >/dev/null 2>&1; then
   echo "$FIX"

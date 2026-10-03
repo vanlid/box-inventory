@@ -16,6 +16,41 @@ photo scans use your Claude subscription through Claude Code, so you don't need 
 Each installer copies the token from `CLAUDE_CODE_OAUTH_TOKEN` into `.claude-token`, a file
 only your user can read, because background services don't see your shell's variables.
 
+## Install (no git needed)
+
+**Mac or Linux:**
+```bash
+curl -fsSL https://github.com/vanlid/box-inventory/releases/latest/download/install.sh | bash
+```
+**Windows (PowerShell):**
+```powershell
+irm https://github.com/vanlid/box-inventory/releases/latest/download/install.ps1 | iex
+```
+This puts the app in `~/box-inventory` (Windows: `%USERPROFILE%\box-inventory`), creates `.env`, and
+installs it as a background service. Run the same line again to **update**: your `data/`, `.env`
+and token are never touched. If it stops because the Claude token is missing, put it in `.env`
+(see below) and run the line again.
+
+**Docker, without the source code:** in an empty folder, download `docker-compose.yml` and
+`env.example` from the [latest release](https://github.com/vanlid/box-inventory/releases/latest),
+rename `env.example` to `.env`, fill it in, and run `docker compose up -d`.
+Update with `docker compose pull && docker compose up -d`.
+
+### What goes in `.env`
+
+| Setting | Needed? | What it is |
+|---|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | **Yes** | Your Claude token, from `claude setup-token`. Used for photo scans. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google Drive backups | See "Backups" below. |
+| `MS_CLIENT_ID` | For OneDrive backups | See "Backups" below. |
+| `MS_TENANT` | Rarely | `consumers` (default) for personal Microsoft accounts, `common` to also allow work accounts. |
+| `BACKUP_KEEP` | No | How many backups to keep (default 14). |
+| `PORT` | No | Default 8765. |
+| `CLAUDE_MODEL` | No | Model for scans (default `sonnet`). |
+| `AUTH=off` | No | Turns passkey sign-in off. Only on a network you trust. |
+
+Restart the app after changing `.env` (run the install line again, or `docker compose up -d`).
+
 ## Tracking clothes and things that move around
 
 Besides numbered **boxes**, add **spots**: places that aren't boxes, like a wardrobe shelf, the
@@ -100,7 +135,7 @@ Connect your drive and pick a backup.
 What was on the server before a restore is moved to `data/before-restore-<date>/`. Delete it once
 you're happy. You can also restore from Settings at any time.
 
-## Pick one way to run it
+## Run from a git checkout instead
 
 | Where | Command (run in this folder) | Runs as |
 |---|---|---|
@@ -149,3 +184,12 @@ To remove the service: `./install-mac.sh uninstall`, `./install-linux.sh uninsta
 - Scans don't use any of your other Claude Code setup (plugins, MCP servers, settings). Each scan
   runs with only the Read tool, looks at the photos and returns a list.
 - Scans use the `sonnet` model (`CLAUDE_MODEL` to change it) and look at the 8 newest photos of a box at most.
+
+## Releases and updates (for maintainers)
+
+- Push a tag like `v1.2.0` to publish a release with the download bundles (`.github/workflows/release.yml`).
+- The Docker image `ghcr.io/vanlid/box-inventory` is built for Intel/AMD and ARM on every push to `main`,
+  every tag, and every Monday, so base-image security fixes and new Claude Code versions are picked up.
+  Each build is scanned with Trivy; if it finds fixable high or critical vulnerabilities, the run fails
+  and GitHub emails you (`.github/workflows/image.yml`).
+- Dependabot opens weekly pull requests for base-image and workflow updates. Merging one rebuilds the image.

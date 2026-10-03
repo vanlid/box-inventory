@@ -1,0 +1,12 @@
+# Weekly pull requests when the Docker base image or the actions used by the workflows have updates.
+# Merging one rebuilds the image (see workflows/image.yml).
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

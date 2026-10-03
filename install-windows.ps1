@@ -47,11 +47,17 @@ if (-not $Claude) {
   exit 1
 }
 
+# The token can also live in .env (the one-line installer creates it for you).
+$EnvFile = Join-Path $Dir ".env"
+if (-not $env:CLAUDE_CODE_OAUTH_TOKEN -and (Test-Path $EnvFile)) {
+  $line = Get-Content $EnvFile | Where-Object { $_ -match '^CLAUDE_CODE_OAUTH_TOKEN=.+' } | Select-Object -Last 1
+  if ($line) { $env:CLAUDE_CODE_OAUTH_TOKEN = ($line -replace '^CLAUDE_CODE_OAUTH_TOKEN=', '').Trim().Trim('"').Trim("'") }
+}
 # --- Token: the task doesn't see your shell's variables, so keep an existing env token in .claude-token ---
 $TokenFile = Join-Path $Dir ".claude-token"
 if (-not (Test-Path $TokenFile) -and $env:CLAUDE_CODE_OAUTH_TOKEN) {
   Set-Content -Path $TokenFile -Value $env:CLAUDE_CODE_OAUTH_TOKEN.Trim() -NoNewline -Encoding ascii
-  Write-Host "Using CLAUDE_CODE_OAUTH_TOKEN from your shell (saved to .claude-token)."
+  Write-Host "Using your CLAUDE_CODE_OAUTH_TOKEN (saved to .claude-token)."
 }
 if (Test-Path $TokenFile) {
   icacls $TokenFile /inheritance:r /grant:r "${Me}:F" "SYSTEM:F" | Out-Null   # readable only by you
@@ -60,7 +66,7 @@ if (Test-Path $TokenFile) {
   $Fix = "The token in .claude-token didn't work. Delete it and set a valid CLAUDE_CODE_OAUTH_TOKEN, or run 'claude setup-token'."
 } else {
   Write-Host "No .claude-token found; checking this computer's Claude login..."
-  $Fix = "Claude isn't set up. Set CLAUDE_CODE_OAUTH_TOKEN and run this again, or run 'claude' once and log in."
+  $Fix = "Claude isn't set up. Put CLAUDE_CODE_OAUTH_TOKEN=... in $EnvFile and run this again, or run 'claude' once and log in."
 }
 foreach ($v in "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
 $ErrorActionPreference = "Continue"
