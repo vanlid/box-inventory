@@ -9,6 +9,7 @@ services:
     environment:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?Set CLAUDE_CODE_OAUTH_TOKEN in .env or your shell}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-sonnet}
+      CLAUDE_ASK_MODEL: ${CLAUDE_ASK_MODEL:-haiku}
       AUTH: ${AUTH:-on}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

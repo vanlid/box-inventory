@@ -235,6 +235,9 @@ canvas.thumb56 { display: block; }
 .items .trk.on { color: var(--ok); border-color: var(--ok); }
 .items .pick { width: 22px; height: 22px; justify-self: center; }
 #selbar:empty { display: none; }
+.askbox { margin-bottom: 14px; display: grid; gap: 10px; }
+.answer { display: grid; gap: 10px; padding: 12px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--surface); }
+.answer p { margin: 0; }
 .seen li { grid-template-columns: 56px 1fr auto; }
 .seen .pics { display: flex; gap: 4px; }
 .seen canvas, .seen img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; display: block; }
@@ -631,8 +634,42 @@ function hl(text, terms) {
   for (const t of terms) if (t) out = out.replace(new RegExp("(" + esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig"), "<mark>$1</mark>");
   return out;
 }
+/* Plain-language questions: Claude reads a text version of the inventory and points at real boxes and items. */
+S.ask = null;  // { q, busy, answer, matches, error }
+function askBlock(q) {
+  const a = S.ask?.q === q ? S.ask : null;
+  if (S.offline) return `<p class="hint">Asking Claude needs a connection.</p>`;
+  if (!a) return `<div class="btnrow"><button class="btn ghost" data-ask>Ask: “${esc(q)}”</button>
+    <span class="hint">Understands any language and vague descriptions, like “sockor” or “something to charge my laptop”.</span></div>`;
+  if (a.busy) return `<div class="st"><span class="spin" aria-hidden="true"></span><span class="msg">Asking Claude…</span></div>`;
+  if (a.error) return `<p class="err">${esc(a.error)} <button class="linkbtn" data-ask>Try again</button></p>`;
+  const withItems = new Set(a.matches.filter((m) => m.item || m.thing).map((m) => m.place));
+  const cards = a.matches.filter((m) => m.item || m.thing || !withItems.has(m.place)).map((m) => {
+    const b = S.boxes.get(m.place), t = S.things[m.thing], it = b && m.item && b.items.find((i) => i.id === m.item);
+    if (t) return thingCard(t);
+    if (it && it.loc) return `<button class="find" ${lbAttrs(photoSrc(b, it.loc.photo), it.loc.box, it.name + " · " + placeShort(b))}>
+      <canvas ${cropAttrs(photoSrc(b, it.loc.photo), it.loc.box)} aria-label="${esc(it.name)} in the photo"></canvas>
+      <span class="cap">${(it.qty || 1) > 1 ? it.qty + "× " : ""}${esc(it.name)}<small>${esc(placeShort(b))}${m.why ? " · " + esc(m.why) : ""}</small></span></button>`;
+    if (it) return `<button class="tcard" data-open="${esc(b.id)}"><span class="thumb56">${esc(it.name.slice(0, 1).toUpperCase())}</span>
+      <span class="meta"><b>${esc(it.name)}</b><span class="sub">${esc(placeName(b))}${m.why ? " · " + esc(m.why) : ""}</span></span></button>`;
+    return b ? boxCard(b) : "";
+  }).join("");
+  return `<div class="answer"><p><b>Claude:</b> ${esc(a.answer)}</p>${cards ? `<div class="finds">${cards}</div>` : ""}</div>`;
+}
+async function askClaude(q) {
+  S.ask = { q, busy: true }; renderList();
+  try { const r = await api("POST", "/api/ask", { q }); S.ask = { q, ...r }; }
+  catch (e) { S.ask = { q, error: e.message }; }
+  if ($("#q").value.trim().toLowerCase() === q.toLowerCase()) renderList();
+}
+document.addEventListener("click", (e) => { if (e.target.closest("[data-ask]")) askClaude($("#q").value.trim()); });
+$("#q").addEventListener("keydown", (e) => {  // Enter with nothing found: ask Claude
+  if (e.key === "Enter" && $("#q").value.trim() && !document.querySelector("#list .hit, #list .tcard")) askClaude($("#q").value.trim());
+});
+
 function renderSearch(q) {
   const terms = q.split(/\s+/).filter(Boolean);
+  const qRaw = $("#q").value.trim();
   const hits = [];
   for (const b of sorted()) {
     const meta = [b.name, b.category, b.location, roomName(b.room), isSpot(b) ? "spot" : "box " + b.number + " box " + num(b.number)].join(" ").toLowerCase();
@@ -644,8 +681,9 @@ function renderSearch(q) {
     if (metaAll || its.length) hits.push({ b, its });
   }
   const tracked = Object.values(S.things).filter((t) => terms.every((x) => (t.name + " " + t.note + " " + t.code).toLowerCase().includes(x)));
-  if (!hits.length && !tracked.length) { $("#list").innerHTML = `<p class="notice">Nothing matches “${esc(q)}”. Try a shorter word, like “cable” instead of “cables”.</p>`; return; }
-  $("#list").innerHTML = (tracked.length ? `<section class="group"><h2>Tracked<span class="n">${tracked.length}</span></h2><div class="tlist">${tracked.map(thingCard).join("")}</div></section>` : "")
+  const ask = `<section class="askbox">${askBlock(qRaw)}</section>`;
+  if (!hits.length && !tracked.length) { $("#list").innerHTML = `<p class="notice">No exact matches for “${esc(q)}”.</p>${ask}`; drawCrops($("#list")); return; }
+  $("#list").innerHTML = ask + (tracked.length ? `<section class="group"><h2>Tracked<span class="n">${tracked.length}</span></h2><div class="tlist">${tracked.map(thingCard).join("")}</div></section>` : "")
     + `<div class="results">${hits.map(({ b, its }) => {
     const spots = its.filter((i) => i.loc), plain = its.filter((i) => !i.loc);
     const where = [roomName(b.room), b.location && "at " + b.location].filter(Boolean).map((s) => hl(s, terms)).join(" · ");

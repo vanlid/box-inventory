@@ -52,6 +52,7 @@ SETUP_FILE = DATA / "setup-code.txt"
 TOKEN_FILE = ROOT / ".claude-token"
 PORT = int(os.environ.get("PORT", "8765"))
 MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")
+ASK_MODEL = os.environ.get("CLAUDE_ASK_MODEL", "haiku")  # plain-language questions: fast and cheap
 AUTH_ON = os.environ.get("AUTH", "on").strip().lower() not in ("off", "0", "false", "no")
 MAX_UPLOAD = 25 * 1024 * 1024
 MAX_SCAN_PHOTOS = 8
@@ -260,10 +261,95 @@ SCHEMA = {
 }
 
 
-def scan(box, photo_paths, known, tracked=()):
+def claude_env():
+    # Drop variables inherited from a parent Claude Code session so the CLI uses this machine's own login.
+    env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDE_CODE_") or k in ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"))}
+    token = oauth_token()
+    if token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    return env
+
+
+def run_claude(prompt, schema, model, tools=(), dirs=(), timeout=600):
     claude = find_claude()
     if not claude:
         raise RuntimeError("The claude command wasn't found on this computer. Install Claude Code and log in once.")
+    cmd = [claude, "-p", prompt, "--output-format", "json", "--json-schema", json.dumps(schema),
+           "--tools", ",".join(tools)] + (["--allowedTools", ",".join(tools)] if tools else [])
+    for d in dirs:
+        cmd += ["--add-dir", str(d)]
+    cmd += ["--model", model, "--no-session-persistence", "--strict-mcp-config"]
+    r = subprocess.run(cmd, cwd=str(PHOTOS), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       timeout=timeout, stdin=subprocess.DEVNULL, env=claude_env())
+    try:
+        out = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError("Claude didn't answer. " + (r.stderr or r.stdout).strip()[:300])
+    if out.get("is_error"):
+        raise RuntimeError("Claude reported an error: " + str(out.get("result", ""))[:300])
+    data = out.get("structured_output")
+    if data is None:  # fall back to parsing the text answer
+        m = re.search(r"\{.*\}", out.get("result", ""), re.S)
+        data = json.loads(m.group(0)) if m else {}
+    return data
+
+
+ASK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string", "description": "Short answer in the language of the question"},
+        "matches": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "place": {"type": "string", "description": "Place id, e.g. P3"},
+                "item": {"type": "string", "description": "Item id inside that place, e.g. I1a2b3c4d, if it's an item"},
+                "thing": {"type": "string", "description": "Tracked item id, e.g. T9f8e7d6c5b, if it's a tracked item"},
+                "why": {"type": "string", "description": "A few words on why it matches"},
+            },
+            "required": ["why"]}},
+    },
+    "required": ["answer", "matches"],
+}
+
+
+def inventory_text(db):
+    """A compact, id-tagged text version of the inventory for Claude to search."""
+    rooms = {r["id"]: r["name"] for r in db["rooms"]}
+    lines = []
+    for b in sorted(db["boxes"].values(), key=lambda b: (b["kind"] == "spot", b.get("number") or 0, b.get("name") or "")):
+        label = f'Box {b["number"]:02d}' if b["kind"] == "box" else "Spot"
+        bits = [f'P{b["id"]} {label} "{b.get("name") or ""}"']
+        if rooms.get(b.get("room")):
+            bits.append(f'room: {rooms[b["room"]]}')
+        if b.get("location"):
+            bits.append(f'at: {b["location"]}')
+        lines.append(" | ".join(bits))
+        for i in b["items"]:
+            lines.append(f'  I{i["id"]} {i["qty"]}x {i["name"]}' + (f' ({i["note"]})' if i.get("note") else ""))
+    for t in db["things"].values():
+        ls = t.get("lastSeen") or {}
+        lines.append(f'T{t["id"]} tracked "{t["name"]}"' + (f' ({t["note"]})' if t.get("note") else "")
+                     + f' | status: {t["status"].replace("_", " ")} | home: P{t["home"] or "-"} | last seen: P{ls.get("place") or "-"}'
+                     + (f' | group of {t["total"]}, counts: ' + ", ".join(f"P{k}={n}" for k, n in t["counts"].items()) if t["kind"] == "group" else ""))
+    return "\n".join(lines)
+
+
+def ask(question, db):
+    prompt = f"""You help someone find things in their home inventory. Answer their question using ONLY the inventory below.
+Understand any language (often Swedish or English), synonyms, translations, plurals and vague descriptions:
+"sockor" means socks, "something to charge my laptop" matches chargers and USB-C cables.
+Answer briefly in the language of the question. List the best matches (at most 12) using the ids shown:
+"place" (like P3) and, for an item, also "item" (like I1a2b3c4d); for a tracked item use "thing" (like T9f8e7d6c5b) and the place it was last seen.
+If nothing matches, say so and suggest what to search for instead. Never invent ids.
+
+Inventory:
+{inventory_text(db)}
+
+Question: {question}"""
+    return run_claude(prompt, ASK_SCHEMA, ASK_MODEL, timeout=180)
+
+
+def scan(box, photo_paths, known, tracked=()):
     files = "\n".join(f"Photo {i}: {p}" for i, p in enumerate(photo_paths, 1))
     known_txt = ("Items already recorded for this box. Don't list these again, unless you clearly see more of them "
                  "or one has no position yet:\n" + "\n".join(f"- {i['qty']}x {i['name']}" for i in known) + "\n\n") if known else ""
@@ -300,31 +386,7 @@ Use the Read tool to look at each of these photos:
   as a fraction of the image width (left/right) and height (top/bottom). For a group of identical items, cover the group.
 Also suggest a short 2-4 word name for the box and pick a category.
 {track_txt}"""
-    cmd = [claude, "-p", prompt,
-           "--output-format", "json",
-           "--json-schema", json.dumps(SCHEMA),
-           "--tools", "Read", "--allowedTools", "Read",
-           "--add-dir", str(PHOTOS), "--add-dir", str(REFS),
-           "--model", MODEL,
-           "--no-session-persistence", "--strict-mcp-config"]
-    # Drop variables inherited from a parent Claude Code session so the CLI uses this machine's own login.
-    env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDE_CODE_") or k in ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"))}
-    token = oauth_token()
-    if token:
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-    r = subprocess.run(cmd, cwd=str(PHOTOS), capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       timeout=600, stdin=subprocess.DEVNULL, env=env)
-    try:
-        out = json.loads(r.stdout)
-    except json.JSONDecodeError:
-        raise RuntimeError("Claude didn't answer. " + (r.stderr or r.stdout).strip()[:300])
-    if out.get("is_error"):
-        raise RuntimeError("Claude reported an error: " + str(out.get("result", ""))[:300])
-    data = out.get("structured_output")
-    if data is None:  # fall back to parsing the text answer
-        m = re.search(r"\{.*\}", out.get("result", ""), re.S)
-        data = json.loads(m.group(0)) if m else {}
-    return data
+    return run_claude(prompt, SCHEMA, MODEL, tools=["Read"], dirs=[PHOTOS, REFS])
 
 
 # ---------- HTTP ----------
@@ -679,6 +741,33 @@ class H(BaseHTTPRequestHandler):
 
         if p == "/api/move" and cmd == "POST":
             return self.move_items()
+        if p == "/api/ask" and cmd == "POST":
+            q = str((self.json_body() or {}).get("q", "")).strip()[:300]
+            if not q:
+                return self.fail(400, "Ask a question.")
+            with lock:
+                db = load()
+            try:
+                res = ask(q, db)
+            except subprocess.TimeoutExpired:
+                return self.fail(504, "Claude took too long to answer. Try again.")
+            except Exception as e:
+                return self.fail(502, str(e))
+            matches = []  # keep only ids that really exist
+            for m in res.get("matches", []) if isinstance(res, dict) else []:
+                if not isinstance(m, dict):
+                    continue
+                place, item, thing = (str(m.get(k) or "").lstrip("PIT") for k in ("place", "item", "thing"))
+                t = db["things"].get(thing)
+                if t and not place:
+                    place = (t.get("lastSeen") or {}).get("place") or t.get("home") or ""
+                b = db["boxes"].get(place)
+                if not b and not t:
+                    continue
+                if item and not (b and any(i["id"] == item for i in b["items"])):
+                    item = ""
+                matches.append({"place": place if b else "", "item": item, "thing": thing if t else "", "why": str(m.get("why", ""))[:160]})
+            return self.send(200, {"answer": str(res.get("answer", ""))[:1200], "matches": matches[:12]})
         m = re.fullmatch(r"/api/boxes/(\d+)(/photos(?:/([\w.-]+))?|/scan|/sightings)?", p)
         if not m:
             return self.fail(404, "Not found")

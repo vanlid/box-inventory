@@ -87,6 +87,7 @@ your LAN port. Use `TS_HOSTNAME` in `.env` for a different device name.
 | `BACKUP_KEEP` | No | How many backups to keep in each place (default 14). |
 | `PORT` | No | Default 8765. |
 | `CLAUDE_MODEL` | No | Model for scans (default `sonnet`). |
+| `CLAUDE_ASK_MODEL` | No | Model for plain-language questions (default `haiku`). |
 | `AUTH=off` | No | Turns passkey sign-in off. Only on a network you trust. |
 
 Restart the app after changing `.env` (run the install line again, or `docker compose up -d`).
@@ -106,6 +107,16 @@ Open the app at its https address (see "Sign-in with passkeys"), then:
 
 The installed app opens full-screen like a normal app, and passkeys work in it. When photos are
 shared into it, it asks which box or spot they belong to, then uploads and scans them as usual.
+
+## Ask in plain language
+
+Type anything in the search box. Exact matches show at once; below them, **Ask** (or Enter when
+nothing matches) sends the question to Claude with a text version of your inventory: boxes,
+rooms, items and notes, and tracked items with their status and where they were last seen. It
+understands any language and vague wording ("sockor", "something to charge my laptop", "what did I
+lend out?"), answers briefly, and shows the matching boxes and items as tappable cards. It uses a
+fast model (`CLAUDE_ASK_MODEL`, default `haiku`), runs without any tools, and can only point to
+boxes and items that exist.
 
 ## Offline copy (per device)
 
