@@ -237,6 +237,33 @@ canvas.thumb56 { display: block; }
 .seen .pics { display: flex; gap: 4px; }
 .seen canvas, .seen img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; display: block; }
 .seenbtn { padding: 0; border: none; background: none; cursor: zoom-in; }
+/* Labels: real millimetre sizes, scaled down on screen with zoom */
+#labelsview .lctl { display: grid; gap: 12px; margin-bottom: 16px; }
+.lpick { border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); padding: 8px 12px; margin: 0; display: grid; gap: 4px; }
+.lpick legend { font: 800 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 0 4px; }
+.lpick label { display: flex; gap: 8px; align-items: center; padding: 3px 0; overflow-wrap: anywhere; }
+.lpreview { --fit: 1; display: grid; gap: 10px; justify-items: start; }
+.lpage { zoom: var(--fit); background: #fff; color: #000; display: grid; grid-template-columns: repeat(var(--cols), var(--w)); grid-auto-rows: var(--h);
+  box-shadow: 0 1px 6px rgba(0,0,0,.25); font-family: var(--body); }
+.lbl { width: var(--w); height: var(--h); box-sizing: border-box; padding: 2.5mm 3mm; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2mm; align-items: center; overflow: hidden; outline: 0.2mm dashed #bbb; outline-offset: -0.1mm; }
+.lt { min-width: 0; display: grid; gap: 0.6mm; align-content: center; }
+.lqr svg { display: block; height: calc(var(--h) - 5mm); width: calc(var(--h) - 5mm); }
+.lnum { font: 900 calc(var(--h) * 0.46)/0.9 var(--display); font-stretch: 62%; letter-spacing: .01em; }
+.lnum small { display: block; font: 700 calc(var(--h) * 0.1)/1 var(--mono); letter-spacing: .15em; }
+.lkind { font: 700 calc(var(--h) * 0.1)/1 var(--mono); letter-spacing: .15em; }
+.lname { font: 700 calc(var(--h) * 0.12)/1.15 var(--body); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.lname.big { font: 900 calc(var(--h) * 0.2)/1.05 var(--display); font-stretch: 75%; text-transform: uppercase; -webkit-line-clamp: 3; }
+.lsub { font: 500 calc(var(--h) * 0.095)/1.1 var(--body); color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media print {
+  body { background: #fff !important; }
+  .wrap > header, #banner, .noprint, main:not(#labelsview), .back { display: none !important; }
+  #labelsview { display: block !important; }
+  .wrap { padding: 0 !important; max-width: none !important; }
+  .lpreview { display: block; }
+  .lpage { zoom: 1 !important; box-shadow: none; break-after: page; }
+  .lbl { outline: none; }
+}
 select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; }
 </style>
 </head><body>
@@ -288,13 +315,16 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
     </section>
     <div class="foot">
       <span class="hint" id="updated"></span>
-      <button class="btn ghost danger" id="delbox">Delete box</button>
+      <span class="btnrow"><button class="btn ghost" id="printlabel">Print label</button>
+      <button class="btn ghost danger" id="delbox">Delete box</button></span>
     </div>
   </main>
 
   <main id="thingsview" hidden><div id="t-list"></div></main>
   <main id="thingview" hidden><button class="back" data-tab="things">← Tracked items</button><div id="t-body"></div></main>
   <main id="laundryview" hidden><div id="l-body"></div></main>
+
+  <main id="labelsview" hidden><button class="back" data-back>← Back</button><style id="lb-page"></style><div id="lb-body"></div></main>
 
   <main id="settings" hidden>
     <button class="back" data-back>← Back</button>
@@ -307,6 +337,7 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
   <option>Hobby</option><option>Mixed / not sure</option>
 </datalist>
 
+<script src="/vendor/qrcode.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -338,6 +369,7 @@ async function load() {
     if (S.room !== "all" && S.room !== "none" && !S.rooms.some((r) => r.id === S.room)) S.room = "all";
     render();
     offerShared();
+    openDeep();
   } catch (e) { if (S.view !== "auth") $("#list").innerHTML = `<p class="notice">${esc(e.message)}</p>`; }
 }
 
@@ -356,6 +388,7 @@ function show(view) {
   if (tab) S.tab = tab;
   $("#detail").hidden = view !== "detail";
   $("#settings").hidden = view !== "settings";
+  $("#labelsview").hidden = view !== "labels";
   $("#searchrow").hidden = $("#roomrow").hidden = view !== "list";
   $("#gear").hidden = !app || view === "settings";
   $("#counts").hidden = !app;
@@ -720,6 +753,8 @@ document.addEventListener("click", (e) => {
   if (e.target.closest('[data-act="new"]')) return newBox();
 });
 $("#gear").onclick = () => { show("settings"); renderSettings(); };
+$("#printlabel").onclick = () => openLabels(["b:" + S.open]);
+document.addEventListener("click", (e) => { if (e.target.closest("[data-labels]")) openLabels(); });
 document.addEventListener("click", (e) => {
   const tb = e.target.closest("[data-tab]"); if (tb) { $("#banner").innerHTML = ""; show(tb.dataset.tab); render(); return; }
   const th = e.target.closest("[data-thing]"); if (th) return openThing(th.dataset.thing);
@@ -1326,6 +1361,89 @@ document.addEventListener("click", async (e) => {
   await takeShared().catch(() => {}); S.sharedCount = 0; $("#banner").innerHTML = ""; history.replaceState(null, "", "/");
 });
 
+
+/* ---------- QR labels: print a sticker, scan it with the phone camera to open that box ---------- */
+const LABEL_SIZES = {
+  a4_24: { name: "A4 sheet, 24 labels (70 × 37 mm)", page: "210mm 297mm", cols: 3, w: 70, h: 37, pad: "0.5mm 0" },
+  a4_8: { name: "A4 sheet, 8 large labels (105 × 74 mm)", page: "210mm 297mm", cols: 2, w: 105, h: 74, pad: "0.5mm 0" },
+  roll62: { name: "Label printer, 62 mm roll (62 × 40 mm)", page: "62mm 40mm", cols: 1, w: 62, h: 40, pad: "0", perPage: 1 },
+};
+const labelOrigin = () => S.auth?.origin || location.origin;  // the secure address the phone should open
+const labelUrl = (kind, id) => `${labelOrigin()}/${kind}/${id}`;
+
+function qrSvg(text) {
+  const qr = qrcode(0, "M"); qr.addData(text); qr.make();
+  const n = qr.getModuleCount(); let d = "";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+  return `<svg viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges" aria-hidden="true"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+function openLabels(preselect) {
+  S.labelSel = new Set(preselect || []);
+  S.labelSize = S.labelSize || store.get("labelSize") || "a4_24";
+  show("labels"); renderLabels();
+}
+function labelItems() {
+  return [...sorted().map((b) => ({ key: "b:" + b.id, kind: "b", id: b.id, b })), ...thingsList().map((t) => ({ key: "t:" + t.id, kind: "t", id: t.id, t }))];
+}
+function labelHtml(it) {
+  const qr = qrSvg(labelUrl(it.kind, it.id));
+  if (it.kind === "t") return `<div class="lbl"><div class="lt"><div class="lname">${esc(it.t.name)}</div><div class="lsub">Tracked item ${esc(it.t.code)}</div></div><div class="lqr">${qr}</div></div>`;
+  const b = it.b, room = roomName(b.room);
+  return `<div class="lbl">${isSpot(b)
+    ? `<div class="lt"><div class="lkind">SPOT</div><div class="lname big">${esc(b.name || "Unnamed spot")}</div>${room ? `<div class="lsub">${esc(room)}</div>` : ""}</div>`
+    : `<div class="lt"><div class="lnum"><small>BOX</small>${num(b.number)}</div>${b.name ? `<div class="lname">${esc(b.name)}</div>` : ""}${room ? `<div class="lsub">${esc(room)}</div>` : ""}</div>`}
+    <div class="lqr">${qr}</div></div>`;
+}
+function renderLabels() {
+  const size = LABEL_SIZES[S.labelSize], items = labelItems(), chosen = items.filter((it) => S.labelSel.has(it.key));
+  const group = (title, list) => list.length ? `<fieldset class="lpick"><legend>${esc(title)}</legend>${list.map((it) => `<label><input type="checkbox" data-lsel="${esc(it.key)}" ${S.labelSel.has(it.key) ? "checked" : ""}>
+      ${it.kind === "t" ? esc(it.t.name) : esc(placeName(it.b))}</label>`).join("")}</fieldset>` : "";
+  const byRoom = [...S.rooms.map((r) => [r.name, items.filter((it) => it.b && it.b.room === r.id)]), ["No room", items.filter((it) => it.b && !roomName(it.b.room))]];
+  const pages = [];
+  const per = size.perPage || size.cols * Math.floor(287 / size.h);
+  for (let i = 0; i < chosen.length; i += per) pages.push(chosen.slice(i, i + per));
+  $("#lb-body").innerHTML = `
+    <div class="noprint lctl">
+      <div class="field"><label for="lb-size">Label size</label><select id="lb-size" class="field-sel">${Object.entries(LABEL_SIZES).map(([k, v]) =>
+        `<option value="${k}" ${k === S.labelSize ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select></div>
+      <div class="btnrow"><button class="btn ghost" data-lall>Select all</button><button class="btn ghost" data-lnone>None</button>
+        <button class="btn tape" data-lprint ${chosen.length ? "" : "disabled"}>Print ${chosen.length} label${chosen.length === 1 ? "" : "s"}</button></div>
+      ${byRoom.map(([n, l]) => group(n, l)).join("")}${group("Tracked items", items.filter((it) => it.t))}
+      <p class="hint">Scanning a label with the phone camera opens <b>${esc(labelOrigin())}</b> at that box. In the print dialog, set margins to <b>None</b> and scale to <b>100%</b>.</p>
+    </div>
+    <div class="lpreview" id="lb-preview">${pages.map((pg) => `<div class="lpage" style="--w:${size.w}mm;--h:${size.h}mm;--cols:${size.cols};padding:${size.pad}">${pg.map(labelHtml).join("")}</div>`).join("")
+      || `<p class="notice noprint">Pick the boxes, spots or items to print labels for.</p>`}</div>`;
+  $("#lb-page").textContent = `@page { size: ${size.page}; margin: 0 }`;
+  fitPreview();
+}
+function fitPreview() {  // show the real-size sheet scaled down to the screen
+  const pv = $("#lb-preview"); if (!pv) return;
+  pv.style.setProperty("--fit", Math.min(1, pv.clientWidth / (pv.querySelector(".lpage")?.offsetWidth || 1)).toFixed(3));
+}
+addEventListener("resize", () => { if (S.view === "labels") fitPreview(); });
+$("#labelsview").addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.id === "lb-size") { S.labelSize = t.value; store.set("labelSize", t.value); return renderLabels(); }
+  if (t.dataset.lsel) { t.checked ? S.labelSel.add(t.dataset.lsel) : S.labelSel.delete(t.dataset.lsel); renderLabels(); }
+});
+$("#labelsview").addEventListener("click", (e) => {
+  if (e.target.closest("[data-lall]")) { labelItems().forEach((it) => S.labelSel.add(it.key)); return renderLabels(); }
+  if (e.target.closest("[data-lnone]")) { S.labelSel.clear(); return renderLabels(); }
+  if (e.target.closest("[data-lprint]")) window.print();
+});
+
+/* Opening a label link: /b/<place> or /t/<tracked item> */
+S.deep = (() => { const m = location.pathname.match(/^\/([bt])\/(\w+)$/); return m && { kind: m[1], id: m[2] }; })();
+function openDeep() {
+  if (!S.deep || !S.loaded || S.view === "auth") return;
+  const { kind, id } = S.deep; S.deep = null; history.replaceState(null, "", "/");
+  if (kind === "b" && S.boxes.get(id)) return openBox(id);
+  if (kind === "t" && S.things[id]) return openThing(id);
+  $("#banner").innerHTML = `<div class="banner"><span class="msg">That label's ${kind === "b" ? "box or spot" : "item"} doesn't exist any more.</span><button class="linkbtn" data-bclose>Close</button></div>`;
+}
+document.addEventListener("click", (e) => { if (e.target.closest("[data-bclose]")) $("#banner").innerHTML = ""; });
+
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {
   const el = $("#s-body");
@@ -1350,6 +1468,9 @@ async function renderSettings() {
   }
   el.innerHTML = `<section><div class="bh"><h2>Rooms</h2></div>
       ${S.rooms.length ? `<ul class="rows">${rooms}</ul>` : `<p class="hint">No rooms yet. Add them with + Room on the main screen.</p>`}</section>
+    <section><div class="bh"><h2>Labels</h2></div>
+      <div class="btnrow"><button class="btn ghost" data-labels>Print QR labels…</button></div>
+      <p class="hint">Stick a label on each box. Scanning it with the phone camera opens that box.</p></section>
     <section><div class="bh"><h2>App</h2></div>${appSection()}</section>
     <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}
     ${S.auth?.auth ? "" : `<p class="hint">Sign-in is turned off on this server (AUTH=off).</p>`}`;

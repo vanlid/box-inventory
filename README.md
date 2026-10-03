@@ -107,6 +107,16 @@ Open the app at its https address (see "Sign-in with passkeys"), then:
 The installed app opens full-screen like a normal app, and passkeys work in it. When photos are
 shared into it, it asks which box or spot they belong to, then uploads and scans them as usual.
 
+## QR labels
+
+Settings → **Print QR labels** (or **Print label** on a box) prints stickers with the box number,
+name, room and a QR code. Point the phone camera at a label and the app opens that box. Spots and
+tracked items (a suitcase, a bag) can have labels too.
+
+Sizes: A4 sheets of 24 (70 × 37 mm, e.g. Avery 3474), A4 sheets of 8 large labels (105 × 74 mm),
+or a 62 mm label-printer roll. In the print dialog, set margins to **None** and scale to **100%**.
+The QR codes point to the app's secure (https) address, so print them from there.
+
 ## Tracking clothes and things that move around
 
 Besides numbered **boxes**, add **spots**: places that aren't boxes, like a wardrobe shelf, the

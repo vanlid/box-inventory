@@ -390,7 +390,8 @@ class H(BaseHTTPRequestHandler):
 
     def guard(self, path):
         """True if the request may proceed; otherwise sends 401/403 and returns False."""
-        if not AUTH_ON or path in PUBLIC or path.startswith(("/api/backup/", "/icons/")):  # backup routes check access themselves
+        if (not AUTH_ON or path in PUBLIC or path.startswith(("/api/backup/", "/icons/", "/vendor/"))  # backup routes check access themselves
+                or re.fullmatch(r"/[bt]/\w+", path)):  # label links open the app page, which then asks to sign in
             return True
         if self.command != "GET":
             with lock:
@@ -593,9 +594,9 @@ class H(BaseHTTPRequestHandler):
     # --- inventory ---
     def app_route(self, p):
         cmd = self.command
-        if p == "/" and cmd == "GET":
+        if (p == "/" or re.fullmatch(r"/[bt]/\w+", p)) and cmd == "GET":  # /b/7 and /t/… are QR label links
             return self.send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
-        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|favicon\.ico|icons/[\w-]+\.png)", p)
+        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|favicon\.ico|icons/[\w-]+\.png|vendor/[\w-]+\.js)", p)
         if m and cmd == "GET":
             f = STATIC / m.group(1)
             if not f.is_file():
