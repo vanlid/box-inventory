@@ -115,6 +115,8 @@ tracked items (a suitcase, a bag) can have labels too.
 
 Sizes: A4 sheets of 24 (70 × 37 mm, e.g. Avery 3474), A4 sheets of 8 large labels (105 × 74 mm),
 or a 62 mm label-printer roll. In the print dialog, set margins to **None** and scale to **100%**.
+The QR codes use a compact uppercase form of the address, which keeps them simple enough to scan
+from about 10× their width (30 cm for the small labels, 70 cm for the large ones).
 The QR codes point to the app's secure (https) address, so print them from there.
 
 ## Tracking clothes and things that move around
@@ -247,7 +249,10 @@ To remove the service: `./install-mac.sh uninstall`, `./install-linux.sh uninsta
 ## Notes
 
 - With `AUTH=off`, anyone who can reach the port can use the app.
-- Boxes scanned before item positions existed get them with **Re-scan all photos** (this rebuilds that box's list).
+- **Select** on a box's contents lets you move items to another box or spot, or delete several at once.
+  Tracked items moved this way take their home and last-seen place along.
+- **Re-scan all photos** refreshes only what the scan listed and you never touched: items you added by
+  hand, edited or track are kept as they are.
 - `.claude-token` and `.env` hold keys to your Claude subscription and backup apps. Don't share them or put them in git.
 - Scans don't use any of your other Claude Code setup (plugins, MCP servers, settings). Each scan
   runs with only the Read tool, looks at the photos and returns a list.

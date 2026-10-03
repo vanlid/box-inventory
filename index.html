@@ -233,6 +233,8 @@ canvas.thumb56 { display: block; }
 .items li { grid-template-columns: 44px 56px 1fr auto auto; }
 .items .trk { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; font-size: 12px; font-weight: 700; padding: 4px 8px; color: var(--muted); }
 .items .trk.on { color: var(--ok); border-color: var(--ok); }
+.items .pick { width: 22px; height: 22px; justify-self: center; }
+#selbar:empty { display: none; }
 .seen li { grid-template-columns: 56px 1fr auto; }
 .seen .pics { display: flex; gap: 4px; }
 .seen canvas, .seen img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; display: block; }
@@ -306,7 +308,9 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
     <div id="status"></div>
     <section class="block" id="d-seen" hidden></section>
     <section class="block">
-      <div class="bh"><h2 id="items-h">Contents</h2><button class="btn ghost" id="rescan" hidden>Re-scan all photos</button></div>
+      <div class="bh"><h2 id="items-h">Contents</h2><span class="btnrow"><button class="btn ghost" id="selectmode">Select</button>
+        <button class="btn ghost" id="rescan" hidden>Re-scan all photos</button></span></div>
+      <div id="selbar"></div>
       <div id="d-items"></div>
       <form class="additem" id="additem">
         <input id="newitem" placeholder="Add an item by hand…" autocomplete="off" aria-label="New item name">
@@ -501,6 +505,8 @@ document.addEventListener("click", async (e) => {
 });
 
 /* ---------- rendering ---------- */
+// Don't redraw a screen under someone who is typing; checkboxes and buttons don't count.
+const isTyping = (el) => !!el && (el.matches("textarea, select") || (el.matches("input") && !["checkbox", "radio", "file", "button", "submit"].includes(el.type)));
 const roomName = (id) => S.rooms.find((r) => r.id === id)?.name || "";
 function render() {
   if (S.view === "auth") return;
@@ -513,17 +519,17 @@ function render() {
   if (S.view === "laundry") renderLaundry();
   if (S.view === "thing") {
     const a = document.activeElement;
-    if (a && $("#thingview").contains(a) && a.matches("input:not([type=file]), select")) { S.pendingThing = true; } else renderThing();
+    if (a && $("#thingview").contains(a) && isTyping(a)) { S.pendingThing = true; } else renderThing();
   }
   if (S.view === "detail") {
     const a = document.activeElement;
-    if (a && $("#detail").contains(a) && a.matches("input:not([type=file]), select")) { S.pending = true; return; }
+    if (a && $("#detail").contains(a) && isTyping(a)) { S.pending = true; return; }
     renderDetail();
   }
 }
 $("#detail").addEventListener("focusout", () => setTimeout(() => {
   const a = document.activeElement;
-  if (S.pending && !(a && $("#detail").contains(a) && a.matches("input:not([type=file]), select"))) { S.pending = false; if (S.view === "detail") renderDetail(); }
+  if (S.pending && !(a && $("#detail").contains(a) && isTyping(a))) { S.pending = false; if (S.view === "detail") renderDetail(); }
 }, 0));
 
 // Boxes first in label order, then spots by name.
@@ -722,10 +728,12 @@ function renderDetail() {
       ${i.loc ? `<button class="spot" ${lbAttrs(photoSrc(b, i.loc.photo), i.loc.box, i.name + " · " + placeShort(b))} aria-label="Show ${esc(i.name)} in the photo"><canvas ${cropAttrs(photoSrc(b, i.loc.photo), i.loc.box)}></canvas></button>` : "<span></span>"}
       <input class="qty" type="number" min="1" inputmode="numeric" value="${Number(i.qty) || 1}" data-if="qty" aria-label="Quantity">
       <span class="nm"><input value="${esc(i.name)}" data-if="name" aria-label="Item name">${i.note ? `<span class="note">${esc(i.note)}</span>` : ""}</span>
-      ${trackedFrom(b, i) ? `<button class="trk on" data-thing="${esc(trackedFrom(b, i).id)}">Tracked</button>` : `<button class="trk" data-track="${esc(i.id)}" title="Track where this goes">Track</button>`}
-      <button class="del" data-delitem="${esc(i.id)}" aria-label="Remove ${esc(i.name)}">✕</button>
+      ${S.selecting ? `<span></span><input type="checkbox" class="pick" data-pick="${esc(i.id)}" ${S.picked.has(i.id) ? "checked" : ""} aria-label="Select ${esc(i.name)}">`
+        : `${trackedFrom(b, i) ? `<button class="trk on" data-thing="${esc(trackedFrom(b, i).id)}">Tracked</button>` : `<button class="trk" data-track="${esc(i.id)}" title="Track where this goes">Track</button>`}
+      <button class="del" data-delitem="${esc(i.id)}" aria-label="Remove ${esc(i.name)}">✕</button>`}
     </li>`).join("") : `<li style="display:block"><span class="none">Nothing listed yet. Add a photo and Claude will list what's inside, or type items below.</span></li>`}</ul>`;
   drawCrops($("#d-items"));
+  renderSelBar(b);
   renderSeen(b);
   $("#delbox").textContent = isSpot(b) ? "Delete spot" : "Delete box";
   $("#updated").textContent = b.updatedAt ? "Updated " + new Date(b.updatedAt).toLocaleString() : "";
@@ -742,7 +750,7 @@ function setStatus(kind, msg, extra = "") {
 
 /* ---------- navigation ---------- */
 function openBox(id) {
-  S.fresh.clear(); S.undo = null; show("detail"); S.open = String(id);
+  S.fresh.clear(); S.undo = null; S.selecting = false; S.picked?.clear(); show("detail"); S.open = String(id);
   if (!S.busy) setStatus(null);
   renderDetail();
 }
@@ -794,7 +802,7 @@ $("#detail").addEventListener("change", async (e) => {
   if (t.dataset.f) { const v = t.value.trim(); if (v !== (b[t.dataset.f] || "")) patch(S.open, { [t.dataset.f]: v }); return; }
   if (t.dataset.if) {
     const iid = t.closest("li").dataset.iid;
-    const items = b.items.map((i) => i.id !== iid ? i : { ...i, [t.dataset.if]: t.dataset.if === "qty" ? Math.max(1, parseInt(t.value) || 1) : t.value.trim() || i.name });
+    const items = b.items.map((i) => i.id !== iid ? i : { ...i, edited: true, [t.dataset.if]: t.dataset.if === "qty" ? Math.max(1, parseInt(t.value) || 1) : t.value.trim() || i.name });
     patch(S.open, { items });
     return;
   }
@@ -840,6 +848,45 @@ $("#delbox").onclick = async (e) => {
   catch (err) { setStatus("err", err.message); }
 };
 
+/* ---------- select items: move them to another place, or delete them together ---------- */
+S.picked = new Set();
+function renderSelBar(b) {
+  $("#selectmode").textContent = S.selecting ? "Done" : "Select";
+  $("#selectmode").hidden = !(b.items || []).length && !S.selecting;
+  const n = S.picked.size;
+  $("#selbar").innerHTML = S.selecting ? `<div class="banner" style="margin:0">
+    <span class="msg"><b>${n}</b> selected · <button class="linkbtn" data-pickall>${n === b.items.length ? "None" : "All"}</button></span>
+    <select id="moveto" class="field-sel" style="width:auto;flex:1;min-width:150px" ${n ? "" : "disabled"}><option value="">Move to…</option>
+      ${sorted().filter((x) => x.id !== b.id).map((x) => `<option value="${esc(x.id)}">${esc(placeName(x))}</option>`).join("")}</select>
+    <button class="btn ghost danger" data-delpicked ${n ? "" : "disabled"}>Delete</button></div>` : "";
+}
+$("#selectmode").onclick = () => { S.selecting = !S.selecting; S.picked.clear(); renderDetail(); };
+$("#detail").addEventListener("change", async (e) => {
+  const t = e.target, b = S.boxes.get(S.open); if (!b) return;
+  if (t.dataset.pick) { t.checked ? S.picked.add(t.dataset.pick) : S.picked.delete(t.dataset.pick); return renderSelBar(b); }
+  if (t.id === "moveto" && t.value) {
+    const to = S.boxes.get(t.value), ids = [...S.picked];
+    try {
+      const r = await api("POST", "/api/move", { from: b.id, to: t.value, items: ids });
+      t.blur();  // the screen waits for focused fields before redrawing; this one is done
+      S.things = r.things; S.boxes.set(r.to.id, r.to); S.picked.clear(); S.selecting = false; keep(r.from);
+      setStatus("ok", `Moved ${r.moved} item${r.moved === 1 ? "" : "s"} to ${placeShort(to)}.`, `<button class="linkbtn" data-open="${esc(to.id)}">Open it</button>`);
+    } catch (err) { setStatus("err", err.message); }
+  }
+});
+$("#detail").addEventListener("click", async (e) => {
+  const b = S.boxes.get(S.open); if (!b) return;
+  if (e.target.closest("[data-pickall]")) { if (S.picked.size === b.items.length) S.picked.clear(); else b.items.forEach((i) => S.picked.add(i.id)); return renderDetail(); }
+  const del = e.target.closest("[data-delpicked]");
+  if (del) {
+    if (armed !== del) return arm(del, `Delete ${S.picked.size}?`);
+    disarm(); S.undo = { id: S.open, items: b.items };
+    const items = b.items.filter((i) => !S.picked.has(i.id)), n = S.picked.size;
+    S.picked.clear(); S.selecting = false; await patch(S.open, { items });
+    setStatus("ok", `Deleted ${n} item${n === 1 ? "" : "s"}.`, `<button class="linkbtn" data-undo>Undo</button>`);
+  }
+});
+
 /* ---------- photos + scanning ---------- */
 async function shrink(file) {
   try {
@@ -884,7 +931,7 @@ async function scan(id, photos, mode) {
     const k = r.added.length, sg = r.sightings || 0;
     setStatus("ok", (mode === "add"
       ? (k ? `Added ${k} item${k > 1 ? "s" : ""}. Tap a thumbnail to see where it is; fix anything that's off.` : "No new items spotted in that photo.")
-      : `Re-scanned: ${k} item${k === 1 ? "" : "s"} listed.`) + (sg ? ` Spotted ${sg} tracked item${sg > 1 ? "s" : ""}: confirm them below.` : ""),
+      : `Re-scanned: ${k} new item${k === 1 ? "" : "s"}${r.box.items.length - k ? `, kept ${r.box.items.length - k} you added, edited or tracked` : ""}.`) + (sg ? ` Spotted ${sg} tracked item${sg > 1 ? "s" : ""}: confirm them below.` : ""),
       `<button class="linkbtn" data-undo>Undo</button>`);
   } catch (e) { setStatus("err", e.message + " The photos are saved; tap Re-scan to try again."); }
 }
@@ -1248,7 +1295,7 @@ function renderThing() {
 }
 $("#thingview").addEventListener("focusout", () => setTimeout(() => {
   const a = document.activeElement;
-  if (S.pendingThing && !(a && $("#thingview").contains(a) && a.matches("input:not([type=file]), select"))) { S.pendingThing = false; if (S.view === "thing") renderThing(); }
+  if (S.pendingThing && !(a && $("#thingview").contains(a) && isTyping(a))) { S.pendingThing = false; if (S.view === "thing") renderThing(); }
 }, 0));
 $("#thingview").addEventListener("change", async (e) => {
   const t = S.things[S.openThing], el = e.target; if (!t) return;
@@ -1369,10 +1416,12 @@ const LABEL_SIZES = {
   roll62: { name: "Label printer, 62 mm roll (62 × 40 mm)", page: "62mm 40mm", cols: 1, w: 62, h: 40, pad: "0", perPage: 1 },
 };
 const labelOrigin = () => S.auth?.origin || location.origin;  // the secure address the phone should open
-const labelUrl = (kind, id) => `${labelOrigin()}/${kind}/${id}`;
+// Uppercase lets the QR code use its compact letters-and-digits mode: fewer, bigger squares, readable from
+// further away. Web addresses ignore case in the scheme and host, and the app accepts /B/ like /b/.
+const labelUrl = (kind, id) => `${labelOrigin()}/${kind}/${id}`.toUpperCase();
 
 function qrSvg(text) {
-  const qr = qrcode(0, "M"); qr.addData(text); qr.make();
+  const qr = qrcode(0, "M"); qr.addData(text, /^[0-9A-Z $%*+\-./:]+$/.test(text) ? "Alphanumeric" : "Byte"); qr.make();
   const n = qr.getModuleCount(); let d = "";
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
   return `<svg viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges" aria-hidden="true"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
@@ -1434,7 +1483,7 @@ $("#labelsview").addEventListener("click", (e) => {
 });
 
 /* Opening a label link: /b/<place> or /t/<tracked item> */
-S.deep = (() => { const m = location.pathname.match(/^\/([bt])\/(\w+)$/); return m && { kind: m[1], id: m[2] }; })();
+S.deep = (() => { const m = location.pathname.match(/^\/([bt])\/(\w+)$/i); return m && { kind: m[1].toLowerCase(), id: m[2].toLowerCase() }; })();
 function openDeep() {
   if (!S.deep || !S.loaded || S.view === "auth") return;
   const { kind, id } = S.deep; S.deep = null; history.replaceState(null, "", "/");

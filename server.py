@@ -144,6 +144,12 @@ def clean_item(it, photos):
     except (TypeError, ValueError):
         qty = 1
     out = {"id": str(it.get("id") or new_id())[:16], "name": name, "qty": qty}
+    if it.get("src") == "scan":  # listed by a scan (re-scans may refresh it) vs. added by hand
+        out["src"] = "scan"
+    if it.get("edited"):  # a scanned item you changed: re-scans keep it as you left it
+        out["edited"] = True
+    if it.get("scanName"):  # the name the scan gave it, so a renamed item isn't found "again"
+        out["scanName"] = str(it["scanName"])[:120]
     if it.get("note"):
         out["note"] = str(it["note"]).strip()[:160]
     loc = clean_loc(it.get("loc"), photos)
@@ -391,7 +397,7 @@ class H(BaseHTTPRequestHandler):
     def guard(self, path):
         """True if the request may proceed; otherwise sends 401/403 and returns False."""
         if (not AUTH_ON or path in PUBLIC or path.startswith(("/api/backup/", "/icons/", "/vendor/"))  # backup routes check access themselves
-                or re.fullmatch(r"/[bt]/\w+", path)):  # label links open the app page, which then asks to sign in
+                or re.fullmatch(r"/[bBtT]/\w+", path)):  # label links open the app page, which then asks to sign in
             return True
         if self.command != "GET":
             with lock:
@@ -594,7 +600,7 @@ class H(BaseHTTPRequestHandler):
     # --- inventory ---
     def app_route(self, p):
         cmd = self.command
-        if (p == "/" or re.fullmatch(r"/[bt]/\w+", p)) and cmd == "GET":  # /b/7 and /t/… are QR label links
+        if (p == "/" or re.fullmatch(r"/[bBtT]/\w+", p)) and cmd == "GET":  # /b/7 and /t/… are QR label links (any case)
             return self.send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
         m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|favicon\.ico|icons/[\w-]+\.png|vendor/[\w-]+\.js)", p)
         if m and cmd == "GET":
@@ -662,6 +668,8 @@ class H(BaseHTTPRequestHandler):
                 save(db)
             return self.send(200, {"rooms": db["rooms"]})
 
+        if p == "/api/move" and cmd == "POST":
+            return self.move_items()
         m = re.fullmatch(r"/api/boxes/(\d+)(/photos(?:/([\w.-]+))?|/scan|/sightings)?", p)
         if not m:
             return self.fail(404, "Not found")
@@ -727,6 +735,36 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, {"deleted": int(key)})
         return self.fail(404, "Not found")
 
+    def move_items(self):
+        """Move items to another box or spot. Their photo crops stay behind (the photo shows the old place);
+        tracked items made from them move their home and last-seen along."""
+        req = self.json_body() or {}
+        src, dst, ids = str(req.get("from", "")), str(req.get("to", "")), req.get("items")
+        if not isinstance(ids, list) or not ids:
+            return self.fail(400, "Pick the items to move.")
+        with lock:
+            db = load()
+            a, b = db["boxes"].get(src), db["boxes"].get(dst)
+            if not a or not b:
+                return self.fail(404, "That box or spot doesn't exist.")
+            if src == dst:
+                return self.fail(400, "That's the same place.")
+            moving = [i for i in a["items"] if i["id"] in ids]
+            a["items"] = [i for i in a["items"] if i["id"] not in ids]
+            for i in moving:
+                i.pop("loc", None)
+                b["items"].append(i)
+                for t in db["things"].values():
+                    if (t.get("from") or {}).get("place") == src and t["from"]["item"] == i["id"]:
+                        t["from"]["place"] = dst
+                        if t.get("home") == src:
+                            t["home"] = dst
+                            TH.add_history(t, what="home", place=dst)
+                        TH.set_seen(db, t, dst, "manual")
+            a["updatedAt"] = b["updatedAt"] = now_ms()
+            save(db)
+        return self.send(200, {"from": a, "to": b, "moved": len(moving), "things": db["things"]})
+
     def add_photo(self, key):
         try:
             data = self.body()
@@ -774,7 +812,7 @@ class H(BaseHTTPRequestHandler):
                 n = it.get("photo")
                 if isinstance(n, int) and 1 <= n <= len(names):  # map "Photo 2" back to its file
                     it = {**it, "loc": {"photo": names[n - 1], "box": it.get("box")}}
-                x = clean_item(it, names)
+                x = clean_item({**it, "src": "scan", "edited": False, "scanName": it.get("name")}, names)
                 if x:
                     found.append(x)
         with lock:  # re-read: the box may have been edited while Claude was looking
@@ -784,7 +822,7 @@ class H(BaseHTTPRequestHandler):
                 return self.fail(404, "Box was deleted during the scan.")
             before = [dict(i) for i in box["items"]]
             if mode == "add":
-                by_name = {i["name"].lower(): i for i in box["items"]}
+                by_name = {n.lower(): i for i in box["items"] for n in (i["name"], i.get("scanName")) if n}
                 added = []
                 for i in found:
                     old = by_name.get(i["name"].lower())
@@ -794,8 +832,19 @@ class H(BaseHTTPRequestHandler):
                         old["loc"] = i["loc"]  # now we know where an earlier item is
                 box["items"] = box["items"] + added
             else:
-                added = found
-                box["items"] = found
+                # Keep what you added or edited (and anything tracked); refresh only untouched scanned items.
+                linked = {t["from"]["item"] for t in db["things"].values() if (t.get("from") or {}).get("place") == key}
+                kept = [i for i in box["items"] if i.get("src") != "scan" or i.get("edited") or i["id"] in linked]
+                by_name = {n.lower(): i for i in kept for n in (i["name"], i.get("scanName")) if n}
+                added = []
+                for i in found:
+                    old = by_name.get(i["name"].lower())
+                    if old:
+                        if "loc" in i:
+                            old["loc"] = i["loc"]  # fresh position in the new photos
+                    else:
+                        added.append(i)
+                box["items"] = kept + added
             if not box["name"] and res.get("suggestedName"):
                 box["name"] = str(res["suggestedName"])[:60]
             if not box["category"] and res.get("category") in CATEGORIES and box["kind"] == "box":
