@@ -31,10 +31,25 @@ installs it as a background service. Run the same line again to **update**: your
 and token are never touched. If it stops because the Claude token is missing, put it in `.env`
 (see below) and run the line again.
 
-**Docker, without the source code:** in an empty folder, download `docker-compose.yml` and
-`env.example` from the [latest release](https://github.com/vanlid/box-inventory/releases/latest),
-rename `env.example` to `.env`, fill it in, and run `docker compose up -d`.
-Update with `docker compose pull && docker compose up -d`.
+### Docker / Docker Compose (any OS)
+
+Uses the ready-made image `ghcr.io/vanlid/box-inventory` (Intel/AMD and ARM, e.g. Apple Silicon).
+Claude Code is built in, so you only need Docker.
+
+```bash
+mkdir box-inventory && cd box-inventory
+curl -fsSL -o docker-compose.yml https://github.com/vanlid/box-inventory/releases/latest/download/docker-compose.yml
+curl -fsSL -o .env https://github.com/vanlid/box-inventory/releases/latest/download/env.example
+# edit .env: at least CLAUDE_CODE_OAUTH_TOKEN=...
+docker compose up -d
+docker compose logs | grep "setup code"     # the code for your first passkey
+```
+
+- **Data:** your boxes, photos and passkeys live in `./data` next to `docker-compose.yml`.
+- **Update:** `docker compose pull && docker compose up -d`.
+- **Stop:** `docker compose down` (data is kept).
+- **Start at boot:** make Docker start at boot (Docker Desktop: "Start when you sign in"). The container restarts by itself.
+- **HTTPS for passkeys:** on the host, run `tailscale serve --bg 8765`, as in "Sign-in with passkeys" below.
 
 ### What goes in `.env`
 
