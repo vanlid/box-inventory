@@ -203,6 +203,7 @@ const Offline = (() => {
   }
   const pendingCount = async () => (await opKeys()).length;
   const offlineError = (msg) => Object.assign(new Error(msg), { offline: true });
+  const ITEM_FIELDS = ["name", "qty", "note", "value", "purchased", "serial", "receipt"];  // what an offline item edit can change
 
   // Apply one change to the local copy (also used to replay the outbox after unlocking).
   function applyLocal(op) {
@@ -210,7 +211,10 @@ const Offline = (() => {
     if (op.t === "boxField" && b) b[op.field] = op.value;
     if (op.t === "itemAdd" && b && !b.items.some((i) => i.id === op.item.id)) b.items.push(op.item);
     if (op.t === "itemDel" && b) b.items = b.items.filter((i) => i.id !== op.id);
-    if (op.t === "itemEdit" && b) { const it = b.items.find((i) => i.id === op.id); if (it) Object.assign(it, op.fields); }
+    if (op.t === "itemEdit" && b) {
+      const it = b.items.find((i) => i.id === op.id);
+      if (it) for (const [f, v] of Object.entries(op.fields)) { if (v === null) delete it[f]; else it[f] = v; }
+    }
     if (op.t === "move") {
       const a = S.boxes.get(op.from), to = S.boxes.get(op.to);
       if (a && to) { const moving = a.items.filter((i) => op.items.includes(i.id)); a.items = a.items.filter((i) => !op.items.includes(i.id));
@@ -256,7 +260,11 @@ const Offline = (() => {
         for (const i of body.items) {
           const o = old.get(i.id);
           if (!o) ops.push({ t: "itemAdd", box: b.id, item: i });
-          else if (o.name !== i.name || o.qty !== i.qty) ops.push({ t: "itemEdit", box: b.id, id: i.id, base: { name: o.name, qty: o.qty }, fields: { name: i.name, qty: i.qty, edited: true } });
+          else {
+            const changed = ITEM_FIELDS.filter((f) => (o[f] ?? null) !== (i[f] ?? null));
+            if (changed.length) ops.push({ t: "itemEdit", box: b.id, id: i.id, base: Object.fromEntries(changed.map((f) => [f, o[f] ?? null])),
+              fields: { ...Object.fromEntries(changed.map((f) => [f, i[f] ?? null])), edited: true } });
+          }
         }
         for (const id of old.keys()) if (!now.has(id)) ops.push({ t: "itemDel", box: b.id, id });
       }
@@ -311,9 +319,10 @@ const Offline = (() => {
           if (op.t === "itemDel") items = items.filter((i) => i.id !== op.id);
           if (op.t === "itemEdit") {
             const it = items.find((i) => i.id === op.id);
-            if (it) for (const f of ["name", "qty"]) {
-              if (it[f] === op.base[f] || it[f] === op.fields[f]) { it[f] = op.fields[f]; it.edited = true; }
-              else conflicts.push({ kind: "item", box: op.box, id: op.id, field: f, mine: op.fields[f], theirs: it[f] });
+            if (it) for (const f of Object.keys(op.base)) {
+              const cur = it[f] ?? null;
+              if (cur === op.base[f] || cur === op.fields[f]) { if (op.fields[f] === null) delete it[f]; else it[f] = op.fields[f]; it.edited = true; }
+              else conflicts.push({ kind: "item", box: op.box, id: op.id, field: f, mine: op.fields[f], theirs: cur });
             }
           }
           Object.assign(boxes[op.box], await realApi("PATCH", `/api/boxes/${op.box}`, { items }));

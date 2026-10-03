@@ -4,10 +4,33 @@ A "place" is any record in db["boxes"]: a numbered box, or a spot such as a laun
 wardrobe shelf. A thing is either a single item (a hoodie) or a counted group of look-alikes
 (12 black socks) whose counts are kept per place, so the ones nobody has seen stand out.
 """
+import re
 import time
 import uuid
 
 STATUSES = ["clean", "in_use", "to_wash", "washing", "drying", "lent", "missing"]
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def clean_details(src, out):
+    """Insurance details shared by box items and tracked items: value, purchase date, serial, receipt photo."""
+    if "value" in src:
+        try:
+            v = round(float(src["value"]), 2)
+            if 0 <= v <= 1e9:
+                out["value"] = v
+            else:
+                out.pop("value", None)
+        except (TypeError, ValueError):
+            out.pop("value", None)
+    for f, rx, n in (("purchased", DATE, 10), ("serial", None, 80), ("receipt", re.compile(r"^\w{8,32}$"), 32)):
+        if f in src:
+            v = str(src[f] or "").strip()[:n]
+            if v and (rx is None or rx.match(v)):
+                out[f] = v
+            else:
+                out.pop(f, None)
+    return out
 MAX_HISTORY = 40
 
 
@@ -25,8 +48,14 @@ def add_history(t, **event):
 
 def set_status(t, status, source):
     if status in STATUSES and status != t.get("status"):
+        was = t.get("status")
         t["status"], t["statusAt"] = status, now_ms()
-        add_history(t, what="status", status=status, source=source)
+        extra = {"to": t["lentTo"]} if status == "lent" and t.get("lentTo") else {}
+        add_history(t, what="status", status=status, source=source, **extra)
+        if status == "lent":
+            t["lentAt"] = now_ms()
+        elif was == "lent":
+            t.pop("dueBack", None)  # it's back: the reminder is done (who borrowed it stays in the history)
 
 
 def set_seen(db, t, place, source, photo=None, box=None, count=None):
@@ -106,6 +135,18 @@ def patch_thing(db, t, req):
                     t["counts"][place] = n
                 else:
                     t["counts"].pop(place, None)
+    clean_details(req, t)
+    if "lentTo" in req:
+        t["lentTo"] = str(req["lentTo"] or "").strip()[:60]
+        last = next((h for h in t.get("history", []) if h.get("what") == "status" and h.get("status") == "lent"), None)
+        if last and t.get("status") == "lent":
+            last["to"] = t["lentTo"]  # the history remembers who borrowed it
+    if "dueBack" in req:
+        v = str(req["dueBack"] or "")
+        if DATE.match(v):
+            t["dueBack"] = v
+        else:
+            t.pop("dueBack", None)
     if "status" in req:
         set_status(t, req["status"], "manual")
     if req.get("backHome") and t["home"]:

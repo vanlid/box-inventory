@@ -46,6 +46,7 @@ load_env_file()
 DATA = ROOT / "data"
 PHOTOS = DATA / "photos"
 REFS = DATA / "refs"  # reference pictures of tracked items, plus sheet.jpg with all of them
+RECEIPTS = DATA / "receipts"  # receipt photos for insurance
 DB_FILE = DATA / "inventory.json"
 AUTH_FILE = DATA / "auth.json"
 SETUP_FILE = DATA / "setup-code.txt"
@@ -105,6 +106,7 @@ def load():
     db.setdefault("boxes", {})
     db.setdefault("rooms", [])
     db.setdefault("things", {})
+    db.setdefault("settings", {"currency": "SEK"})
     for k, b in db["boxes"].items():  # places: numbered boxes, or spots like "laundry basket"
         b.setdefault("id", k)
         b.setdefault("kind", "box")
@@ -156,7 +158,7 @@ def clean_item(it, photos):
     loc = clean_loc(it.get("loc"), photos)
     if loc:
         out["loc"] = loc
-    return out
+    return TH.clean_details(it, out)
 
 
 # ---------- passkey accounts ----------
@@ -226,6 +228,44 @@ def fix_auth_after_restore(restored, origin, current):
 
 
 BACKUPS = BK.Backups(DATA, lock, fix_auth_after_restore)
+
+
+# ---------- insurance export ----------
+
+CURRENCIES = ["SEK", "EUR", "USD", "NOK", "DKK", "GBP", "CHF"]
+
+
+def export_csv(db):
+    """All items and tracked items as a spreadsheet: one row each, with insurance details."""
+    import csv
+    import io
+    rooms = {r["id"]: r["name"] for r in db["rooms"]}
+    cur = db["settings"].get("currency", "SEK")
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Room", "Place", "Item", "Quantity", "Note", f"Value each ({cur})", f"Total value ({cur})", "Purchased",
+                "Serial number", "Receipt", "Tracked status", "Lent to", "Due back"])
+    things_by_item = {(t.get("from") or {}).get("item"): t for t in db["things"].values() if t.get("from")}
+    lent = lambda t, f: t.get(f, "") if t.get("status") == "lent" else ""
+    for b in sorted(db["boxes"].values(), key=lambda b: (rooms.get(b.get("room"), "~"), b["kind"] == "spot", b.get("number") or 0)):
+        place = (f'Box {b["number"]:02d}' if b["kind"] == "box" else "Spot") + (f' {b["name"]}' if b.get("name") else "")
+        for i in b["items"]:
+            t = things_by_item.get(i["id"]) or {}
+            v = i.get("value", t.get("value"))
+            w.writerow([rooms.get(b.get("room"), ""), place, i["name"], i["qty"], i.get("note", ""),
+                        v if v is not None else "", round(v * i["qty"], 2) if v is not None else "",
+                        i.get("purchased", t.get("purchased", "")), i.get("serial", t.get("serial", "")),
+                        "yes" if i.get("receipt") or t.get("receipt") else "", t.get("status", "").replace("_", " "),
+                        lent(t, "lentTo"), lent(t, "dueBack")])
+    for t in db["things"].values():
+        if t.get("from"):
+            continue  # already listed with its box item
+        home = db["boxes"].get(t.get("home")) or {}
+        v = t.get("value")
+        w.writerow([rooms.get(home.get("room"), ""), home.get("name") or "", t["name"], t.get("total", 1), t.get("note", ""),
+                    v if v is not None else "", round(v * t.get("total", 1), 2) if v is not None else "", t.get("purchased", ""),
+                    t.get("serial", ""), "yes" if t.get("receipt") else "", t["status"].replace("_", " "), lent(t, "lentTo"), lent(t, "dueBack")])
+    return out.getvalue()
 
 
 # ---------- Claude scan ----------
@@ -683,6 +723,26 @@ class H(BaseHTTPRequestHandler):
         if m and cmd == "GET":
             f = PHOTOS / m.group(1) / m.group(2)
             return self.send(200, f.read_bytes(), "image/jpeg") if f.exists() else self.fail(404, "Photo not found")
+        m = re.fullmatch(r"/receipts/(\w+)\.jpg", p)
+        if m and cmd == "GET":
+            f = RECEIPTS / f"{m.group(1)}.jpg"
+            return self.send(200, f.read_bytes(), "image/jpeg") if f.exists() else self.fail(404, "No receipt")
+        if p == "/api/receipts" and cmd == "PUT":
+            rid = uuid.uuid4().hex[:16]
+            return self.save_jpeg(RECEIPTS / f"{rid}.jpg", dir_=RECEIPTS, extra={"id": rid})
+        if p == "/api/settings" and cmd == "PATCH":
+            req = self.json_body() or {}
+            with lock:
+                db = load()
+                if str(req.get("currency", "")).upper() in CURRENCIES:
+                    db["settings"]["currency"] = str(req["currency"]).upper()
+                save(db)
+            return self.send(200, db["settings"])
+        if p == "/api/export.csv" and cmd == "GET":
+            with lock:
+                db = load()
+            return self.send(200, export_csv(db).encode("utf-8-sig"), "text/csv; charset=utf-8",
+                             headers=[("Content-Disposition", f'attachment; filename="box-inventory-{time.strftime("%Y-%m-%d")}.csv"')])
         m = re.fullmatch(r"/refs/(\w+)\.jpg", p)
         if m and cmd == "GET":
             f = REFS / f"{m.group(1)}.jpg"
@@ -997,7 +1057,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send(200, {"deleted": tid})
         return self.fail(404, "Not found")
 
-    def save_jpeg(self, path, check=None):
+    def save_jpeg(self, path, check=None, dir_=None, extra=None):
         try:
             data = self.body()
         except ValueError:
@@ -1007,11 +1067,11 @@ class H(BaseHTTPRequestHandler):
         with lock:
             if check and not check(load()):
                 return self.fail(404, "Item not found")
-            REFS.mkdir(parents=True, exist_ok=True)
+            (dir_ or REFS).mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".tmp")
             tmp.write_bytes(data)
             tmp.replace(path)
-        return self.send(200, {"ok": True})
+        return self.send(200, {"ok": True, **(extra or {})})
 
 
 if __name__ == "__main__":
@@ -1021,6 +1081,7 @@ if __name__ == "__main__":
         PORT = int(sys.argv[sys.argv.index("--port") + 1])
     PHOTOS.mkdir(parents=True, exist_ok=True)
     REFS.mkdir(parents=True, exist_ok=True)
+    RECEIPTS.mkdir(parents=True, exist_ok=True)
     c = find_claude()
     claude_auth = ("token from .claude-token" if TOKEN_FILE.exists() and TOKEN_FILE.read_text().strip() else "token from CLAUDE_CODE_OAUTH_TOKEN") if oauth_token() else "this computer's Claude login"
     print(f"Box Inventory on http://0.0.0.0:{PORT}  (claude: {c or 'NOT FOUND - scans will fail'}; auth: {claude_auth})", flush=True)

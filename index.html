@@ -236,6 +236,21 @@ canvas.thumb56 { display: block; }
 .items .pick { width: 22px; height: 22px; justify-self: center; }
 #selbar:empty { display: none; }
 .askbox { margin-bottom: 14px; display: grid; gap: 10px; }
+.items li.more { display: block; background: var(--bg); padding: 10px 12px; }
+.morefields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.morefields .field input { padding: 7px 9px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); width: 100%; min-width: 0; }
+.morefields .receipt { grid-column: 1 / -1; }
+.rthumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1.5px solid var(--line); display: block; }
+.more-link { font-size: 12px; margin-left: 4px; }
+.report h2 { margin: 0 0 4px; font: 800 24px var(--display); }
+.rtable { overflow-x: auto; }
+.report table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+.report th, .report td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.report td small { display: block; color: var(--muted); }
+.report .num { text-align: right; white-space: nowrap; }
+.report .rgroup th { background: var(--bg); font: 800 13px var(--display); letter-spacing: .08em; text-transform: uppercase; padding-top: 14px; }
+.report .rgroup th span { float: right; font: 600 13px var(--body); letter-spacing: 0; text-transform: none; }
+.report .rph canvas { width: 64px; height: 48px; border-radius: 4px; display: block; }
 .answer { display: grid; gap: 10px; padding: 12px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--surface); }
 .answer p { margin: 0; }
 .seen li { grid-template-columns: 56px 1fr auto; }
@@ -262,8 +277,8 @@ canvas.thumb56 { display: block; }
 .lsub { font: 500 calc(var(--h) * 0.095)/1.1 var(--body); color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media print {
   body { background: #fff !important; }
-  .wrap > header, #banner, .noprint, main:not(#labelsview), .back { display: none !important; }
-  #labelsview { display: block !important; }
+  .wrap > header, #banner, #offbar, .noprint, .back { display: none !important; }  /* only the open screen prints */
+  .report table { font-size: 10pt; } .report tr { break-inside: avoid; }
   .wrap { padding: 0 !important; max-width: none !important; }
   .lpreview { display: block; }
   .lpage { zoom: 1 !important; box-shadow: none; break-after: page; }
@@ -332,6 +347,7 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
   <main id="thingview" hidden><button class="back" data-tab="things">← Tracked items</button><div id="t-body"></div></main>
   <main id="laundryview" hidden><div id="l-body"></div></main>
 
+  <main id="reportview" hidden><button class="back" data-back>← Back</button><div id="rp-body"></div></main>
   <main id="labelsview" hidden><button class="back" data-back>← Back</button><style id="lb-page"></style><div id="lb-body"></div></main>
 
   <main id="settings" hidden>
@@ -382,11 +398,12 @@ async function patch(id, data) {
 async function load() {
   try {
     const db = await api("GET", "/api/boxes");
-    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.things = db.things || {}; S.loaded = true;
+    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.things = db.things || {}; S.settings = db.settings || S.settings; S.loaded = true;
     if (S.room !== "all" && S.room !== "none" && !S.rooms.some((r) => r.id === S.room)) S.room = "all";
     render();
     offerShared();
     openDeep();
+    overdueBanner();
     Offline.afterLoad();
   } catch (e) { if (S.view !== "auth") $("#list").innerHTML = `<p class="notice">${esc(e.message)}</p>`; }
 }
@@ -407,6 +424,7 @@ function show(view) {
   $("#detail").hidden = view !== "detail";
   $("#settings").hidden = view !== "settings";
   $("#labelsview").hidden = view !== "labels";
+  $("#reportview").hidden = view !== "report";
   $("#searchrow").hidden = $("#roomrow").hidden = view !== "list";
   $("#gear").hidden = !app || view === "settings";
   $("#counts").hidden = !app;
@@ -522,6 +540,28 @@ document.addEventListener("click", async (e) => {
 /* ---------- rendering ---------- */
 // Don't redraw a screen under someone who is typing; checkboxes and buttons don't count.
 const isTyping = (el) => !!el && (el.matches("textarea, select") || (el.matches("input") && !["checkbox", "radio", "file", "button", "submit"].includes(el.type)));
+// Redraw a screen without disturbing someone who is typing: the focused field keeps its text and cursor.
+function focusKey(el) {
+  if (el.id) return "#" + CSS.escape(el.id);
+  for (const a of ["data-if", "data-it", "data-tp", "data-f"]) if (el.hasAttribute(a)) {
+    const li = el.closest("[data-iid], [data-for]");
+    const scope = !li ? "" : li.dataset.iid ? `[data-iid="${CSS.escape(li.dataset.iid)}"] ` : `[data-for="${CSS.escape(li.dataset.for)}"] `;
+    return `${scope}[${a}="${CSS.escape(el.getAttribute(a))}"]`;
+  }
+  return null;
+}
+function keepFocus(container, draw) {
+  const a = document.activeElement;
+  if (!a || !container.contains(a) || !isTyping(a)) return draw();
+  const key = focusKey(a), val = a.value;
+  let sel = null; try { sel = [a.selectionStart, a.selectionEnd]; } catch {}
+  draw();
+  const n = key && container.querySelector(key);
+  if (!n) return;
+  if (n.value !== val) n.value = val;
+  n.focus();
+  if (sel && sel[0] != null) try { n.setSelectionRange(sel[0], sel[1]); } catch {}
+}
 const roomName = (id) => S.rooms.find((r) => r.id === id)?.name || "";
 function render() {
   if (S.view === "auth") return;
@@ -532,20 +572,9 @@ function render() {
   renderRooms(); renderList();
   if (S.view === "things") renderThings();
   if (S.view === "laundry") renderLaundry();
-  if (S.view === "thing") {
-    const a = document.activeElement;
-    if (a && $("#thingview").contains(a) && isTyping(a)) { S.pendingThing = true; } else renderThing();
-  }
-  if (S.view === "detail") {
-    const a = document.activeElement;
-    if (a && $("#detail").contains(a) && isTyping(a)) { S.pending = true; return; }
-    renderDetail();
-  }
+  if (S.view === "thing") keepFocus($("#thingview"), renderThing);
+  if (S.view === "detail") keepFocus($("#detail"), renderDetail);
 }
-$("#detail").addEventListener("focusout", () => setTimeout(() => {
-  const a = document.activeElement;
-  if (S.pending && !(a && $("#detail").contains(a) && isTyping(a))) { S.pending = false; if (S.view === "detail") renderDetail(); }
-}, 0));
 
 // Boxes first in label order, then spots by name.
 function sorted() { return [...S.boxes.values()].sort((a, b) => (a.kind === "spot") - (b.kind === "spot") || (a.number || 0) - (b.number || 0) || (a.name || "").localeCompare(b.name || "")); }
@@ -777,11 +806,13 @@ function renderDetail() {
     <li data-iid="${esc(i.id)}" class="${S.fresh.has(i.id) ? "fresh" : ""}">
       ${i.loc ? `<button class="spot" ${lbAttrs(photoSrc(b, i.loc.photo), i.loc.box, i.name + " · " + placeShort(b))} aria-label="Show ${esc(i.name)} in the photo"><canvas ${cropAttrs(photoSrc(b, i.loc.photo), i.loc.box)}></canvas></button>` : "<span></span>"}
       <input class="qty" type="number" min="1" inputmode="numeric" value="${Number(i.qty) || 1}" data-if="qty" aria-label="Quantity">
-      <span class="nm"><input value="${esc(i.name)}" data-if="name" aria-label="Item name">${i.note ? `<span class="note">${esc(i.note)}</span>` : ""}</span>
+      <span class="nm"><input value="${esc(i.name)}" data-if="name" aria-label="Item name">
+        <span class="note">${[i.note && esc(i.note), i.value != null && money(i.value * (i.qty || 1)), i.receipt && "receipt"].filter(Boolean).join(" · ")}
+          <button class="linkbtn more-link" data-more="${esc(i.id)}">${S.itemOpen === i.id ? "Hide details" : "Details"}</button></span></span>
       ${S.selecting ? `<span></span><input type="checkbox" class="pick" data-pick="${esc(i.id)}" ${S.picked.has(i.id) ? "checked" : ""} aria-label="Select ${esc(i.name)}">`
         : `${trackedFrom(b, i) ? `<button class="trk on" data-thing="${esc(trackedFrom(b, i).id)}">Tracked</button>` : `<button class="trk" data-track="${esc(i.id)}" title="Track where this goes">Track</button>`}
       <button class="del" data-delitem="${esc(i.id)}" aria-label="Remove ${esc(i.name)}">✕</button>`}
-    </li>`).join("") : `<li style="display:block"><span class="none">Nothing listed yet. Add a photo and Claude will list what's inside, or type items below.</span></li>`}</ul>`;
+    </li>${S.itemOpen === i.id ? `<li class="more" data-for="${esc(i.id)}">${detailFields(i, "it")}</li>` : ""}`).join("") : `<li style="display:block"><span class="none">Nothing listed yet. Add a photo and Claude will list what's inside, or type items below.</span></li>`}</ul>`;
   drawCrops($("#d-items"));
   renderSelBar(b);
   renderSeen(b);
@@ -1170,7 +1201,7 @@ function whereText(t) {
 function thingCard(t) {
   return `<button class="tcard" data-thing="${esc(t.id)}">${thingPic(t)}
     <span class="meta"><span><b>${esc(t.name)}</b> <span class="code">${esc(t.code)}${t.kind === "group" ? ` · ×${t.total}` : ""}</span></span>
-      <span>${pill(t.status)}</span>
+      <span>${pill(t.status)}${isLent(t) && (t.lentTo || t.dueBack) ? ` <span class="${isOverdue(t) ? "away" : "sub"}">${t.lentTo ? "to " + esc(t.lentTo) : ""}${t.dueBack ? ` · due ${esc(new Date(t.dueBack + "T12:00").toLocaleDateString())}` : ""}</span>` : ""}</span>
       <span class="sub">${whereText(t)}</span></span></button>`;
 }
 
@@ -1263,7 +1294,7 @@ async function resolveSeen(b, btn) {
 function renderThings() {
   const all = thingsList(), f = S.tfilter || "all";
   const filters = { all: ["All", () => true], away: ["Away from home", isAway], stale: [`Not seen in ${STALE_DAYS} days`, isStale],
-    missing: ["Missing", (t) => t.status === "missing" || unaccounted(t) > 0] };
+    missing: ["Missing", (t) => t.status === "missing" || unaccounted(t) > 0], lent: ["Lent out", isLent] };
   const shown = all.filter(filters[f][1]);
   const homeOpts = (sel) => `<option value="">No home yet</option>` + sorted().map((b) => `<option value="${b.id}" ${b.id === sel ? "selected" : ""}>${esc(placeName(b))}</option>`).join("");
   $("#t-list").innerHTML = `
@@ -1340,13 +1371,11 @@ function renderThing() {
       ${ls && lsBox && ls.photo && ls.box ? `<div><button class="btn ghost" ${lbAttrs(photoSrc(lsBox, ls.photo), ls.box, t.name + " · " + placeShort(lsBox))}>Show in the photo</button></div>` : ""}
       <div class="btnrow">${t.home ? `<button class="btn tape" data-backhome>Put back home</button>` : ""}
         <select id="tp-seen" class="field-sel" style="width:auto;flex:1">${placeOpts("", "It's somewhere else now…")}</select></div></section>`}
+    ${lendingBlock(t)}
+    <section class="block"><div class="bh"><h2>Value and receipt</h2></div>${detailFields(t, "tp")}</section>
     <section class="block"><div class="bh"><h2>History</h2></div><ul class="hist">${hist}</ul></section>
     <div class="foot"><span class="hint">Tracking since ${new Date(t.createdAt).toLocaleDateString()}</span><button class="btn ghost danger" id="tp-del">Stop tracking</button></div>`;
 }
-$("#thingview").addEventListener("focusout", () => setTimeout(() => {
-  const a = document.activeElement;
-  if (S.pendingThing && !(a && $("#thingview").contains(a) && isTyping(a))) { S.pendingThing = false; if (S.view === "thing") renderThing(); }
-}, 0));
 $("#thingview").addEventListener("change", async (e) => {
   const t = S.things[S.openThing], el = e.target; if (!t) return;
   if (el.id === "tp-name" && el.value.trim() && el.value.trim() !== t.name) { await tpatch(t.id, { name: el.value }); if (t.hasRef) buildSheet(); }
@@ -1543,6 +1572,146 @@ function openDeep() {
 }
 document.addEventListener("click", (e) => { if (e.target.closest("[data-bclose]")) $("#banner").innerHTML = ""; });
 
+
+/* ---------- insurance details: value, purchase date, serial, receipt ---------- */
+const money = (v) => v == null ? "" : new Intl.NumberFormat(undefined, { style: "currency", currency: S.settings?.currency || "SEK", maximumFractionDigits: 0 }).format(v);
+const today = () => new Date().toISOString().slice(0, 10);
+function detailFields(x, prefix) {  // the same fields for box items (prefix "it") and tracked items ("tp")
+  return `<div class="morefields">
+    <div class="field"><label>Value each (${esc(S.settings?.currency || "SEK")})</label><input type="number" min="0" step="any" inputmode="decimal" data-${prefix}="value" value="${x.value ?? ""}" placeholder="0"></div>
+    <div class="field"><label>Purchased</label><input type="date" data-${prefix}="purchased" value="${esc(x.purchased || "")}" max="${today()}"></div>
+    <div class="field"><label>Serial number</label><input data-${prefix}="serial" value="${esc(x.serial || "")}" autocomplete="off"></div>
+    ${prefix === "it" ? `<div class="field"><label>Note</label><input data-it="note" value="${esc(x.note || "")}" placeholder="Brand, colour, size…"></div>` : ""}
+    <div class="field receipt"><label>Receipt</label><div class="btnrow">
+      ${x.receipt ? `<button class="seenbtn" data-lb-src="/receipts/${esc(x.receipt)}.jpg" data-lb-box="" data-lb-cap="Receipt"><img src="${S.offline ? "" : `/receipts/${esc(x.receipt)}.jpg`}" alt="Receipt" class="rthumb"></button>` : ""}
+      <label class="btn ghost" style="cursor:pointer">${x.receipt ? "Replace" : "Add photo"}<input type="file" accept="image/*" data-receipt="${prefix}" hidden></label>
+      ${x.receipt ? `<button class="linkbtn" data-${prefix}-noreceipt>Remove</button>` : ""}</div></div>
+  </div>`;
+}
+async function uploadReceipt(file) {
+  const jpg = await shrink(file);  // same downsizing as box photos
+  if (!jpg) throw new Error("That file couldn't be opened as a photo.");
+  return (await api("PUT", "/api/receipts", jpg, "image/jpeg")).id;
+}
+function patchItem(b, id, fields) {
+  return patch(b.id, { items: b.items.map((i) => {
+    if (i.id !== id) return i;
+    const n = { ...i, edited: true };
+    for (const [f, v] of Object.entries(fields)) { if (v === "" || v == null) delete n[f]; else n[f] = v; }
+    return n;
+  }) });
+}
+$("#detail").addEventListener("change", async (e) => {
+  const t = e.target, b = S.boxes.get(S.open); if (!b) return;
+  const id = t.closest("li.more")?.dataset.for; if (!id) return;
+  if (t.dataset.it) return patchItem(b, id, { [t.dataset.it]: t.dataset.it === "value" ? (t.value === "" ? "" : Number(t.value)) : t.value.trim() });
+  if (t.dataset.receipt === "it" && t.files[0]) {
+    try { const rid = await uploadReceipt(t.files[0]); document.activeElement?.blur(); patchItem(b, id, { receipt: rid }); }  // blur: let the screen redraw
+    catch (err) { setStatus("err", err.message); }
+  }
+});
+$("#detail").addEventListener("click", (e) => {
+  const b = S.boxes.get(S.open); if (!b) return;
+  const more = e.target.closest("[data-more]");
+  if (more) { S.itemOpen = S.itemOpen === more.dataset.more ? null : more.dataset.more; return renderDetail(); }
+  const id = e.target.closest("li.more")?.dataset.for;
+  if (id && e.target.closest("[data-it-noreceipt]")) patchItem(b, id, { receipt: "" });
+});
+
+/* ---------- lending: who has it, when it's due back, and a calendar reminder ---------- */
+const isLent = (t) => t.status === "lent";
+const isOverdue = (t) => isLent(t) && t.dueBack && t.dueBack < today();
+function icsText(t) {
+  const esc_ = (s) => String(s).replace(/[\\;,]/g, (c) => "\\" + c).replace(/\n/g, "\\n");
+  const d = t.dueBack.replace(/-/g, ""), next = new Date(t.dueBack + "T12:00:00Z"); next.setUTCDate(next.getUTCDate() + 1);
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const who = t.lentTo ? ` (lent to ${t.lentTo})` : "";
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Box Inventory//EN", "BEGIN:VEVENT",
+    `UID:${t.id}-${d}@box-inventory`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${next.toISOString().slice(0, 10).replace(/-/g, "")}`,
+    `SUMMARY:${esc_("Get back: " + t.name + who)}`, `DESCRIPTION:${esc_(`${t.name}${who} is due back today.\n${labelOrigin()}/t/${t.id}`)}`,
+    "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc_("Get back: " + t.name)}`, "TRIGGER;RELATED=START:PT9H", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
+}
+function downloadFile(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function lendingBlock(t) {
+  if (!isLent(t)) return "";
+  return `<section class="block"><div class="bh"><h2>Lent out</h2>${isOverdue(t) ? `<span class="away">Overdue</span>` : ""}</div>
+    <div class="two"><div class="field"><label for="tp-lentto">Lent to</label><input id="tp-lentto" value="${esc(t.lentTo || "")}" placeholder="Name"></div>
+      <div class="field"><label for="tp-due">Due back</label><input id="tp-due" type="date" value="${esc(t.dueBack || "")}"></div></div>
+    <div class="btnrow">${t.dueBack ? `<button class="btn ghost" data-ics>Add reminder to calendar</button>` : `<span class="hint">Set a date to get a calendar reminder.</span>`}
+      <button class="btn tape" data-returned>It's back</button></div></section>`;
+}
+$("#thingview").addEventListener("change", (e) => {
+  const t = S.things[S.openThing], el = e.target; if (!t) return;
+  if (el.id === "tp-lentto") tpatch(t.id, { lentTo: el.value });
+  if (el.id === "tp-due") tpatch(t.id, { dueBack: el.value });
+  if (el.dataset.tp) tpatch(t.id, { [el.dataset.tp]: el.dataset.tp === "value" ? (el.value === "" ? "" : Number(el.value)) : el.value.trim() });
+  if (el.dataset.receipt === "tp" && el.files[0]) uploadReceipt(el.files[0]).then((id) => { document.activeElement?.blur(); tpatch(t.id, { receipt: id }); }).catch((x) => alert(x.message));
+});
+$("#thingview").addEventListener("click", (e) => {
+  const t = S.things[S.openThing]; if (!t) return;
+  if (e.target.closest("[data-ics]")) downloadFile(`return-${t.name.replace(/[^\w-]+/g, "-").toLowerCase()}.ics`, icsText(t), "text/calendar");
+  if (e.target.closest("[data-returned]")) tpatch(t.id, { backHome: true });
+  if (e.target.closest("[data-tp-noreceipt]")) tpatch(t.id, { receipt: "" });
+});
+function overdueBanner() {
+  const late = Object.values(S.things).filter(isOverdue);
+  if (!late.length || S.overdueShown || $("#banner").innerHTML) return;
+  S.overdueShown = true;
+  $("#banner").innerHTML = `<div class="banner"><span class="msg"><b>Due back:</b> ${late.map((t) => `<button class="linkbtn" data-thing="${esc(t.id)}">${esc(t.name)}</button>${t.lentTo ? ` (${esc(t.lentTo)})` : ""}`).join(", ")}</span>
+    <button class="linkbtn" data-bclose>Close</button></div>`;
+}
+
+/* ---------- export: spreadsheet and printable report ---------- */
+function exportSection() {
+  return `<div class="field" style="max-width:260px"><label for="set-cur">Currency</label><select id="set-cur" class="field-sel">
+      ${["SEK", "EUR", "USD", "NOK", "DKK", "GBP", "CHF"].map((c) => `<option ${c === (S.settings?.currency || "SEK") ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+    <div class="btnrow"><button class="btn ghost" data-csv>Download spreadsheet (CSV)</button><button class="btn ghost" data-report>Printable report…</button></div>
+    <p class="hint">Add values, purchase dates, serial numbers and receipts under <b>Details</b> on any item. The report and spreadsheet are useful for home insurance.</p>`;
+}
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "set-cur") return;
+  try { S.settings = await api("PATCH", "/api/settings", { currency: e.target.value }); render(); } catch (x) { alert(x.message); }
+});
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("[data-csv]")) {
+    try {
+      const r = await fetch("/api/export.csv", { credentials: "same-origin" }); if (!r.ok) throw new Error("Export failed.");
+      downloadFile(`box-inventory-${today()}.csv`, await r.text(), "text/csv;charset=utf-8");
+    } catch (x) { alert(x.message); }
+  }
+  if (e.target.closest("[data-report]")) { S.reportPhotos = S.reportPhotos ?? false; show("report"); renderReport(); }
+  if (e.target.closest("[data-rprint]")) window.print();
+});
+function renderReport() {
+  const rows = [], linked = new Map(Object.values(S.things).filter((t) => t.from).map((t) => [t.from.item, t]));
+  let total = 0;
+  const groups = [...S.rooms.map((r) => [r.name, sorted().filter((b) => b.room === r.id)]), ["No room", sorted().filter((b) => !roomName(b.room))]].filter(([, bs]) => bs.some((b) => b.items.length));
+  for (const [room, bs] of groups) {
+    let roomTotal = 0; const body = [];
+    for (const b of bs) for (const i of b.items) {
+      const t = linked.get(i.id) || {}, v = i.value ?? t.value, sum = v != null ? v * (i.qty || 1) : null;
+      if (sum) roomTotal += sum;
+      body.push(`<tr>${S.reportPhotos ? `<td class="rph">${i.loc ? `<canvas ${cropAttrs(photoSrc(b, i.loc.photo), i.loc.box)}></canvas>` : ""}</td>` : ""}
+        <td>${esc(i.name)}${i.note ? `<small>${esc(i.note)}</small>` : ""}</td><td>${esc(placeShort(b))}</td><td class="num">${i.qty}</td>
+        <td class="num">${sum != null ? money(sum) : ""}</td><td>${esc(i.purchased || t.purchased || "")}</td><td>${esc(i.serial || t.serial || "")}</td><td>${i.receipt || t.receipt ? "✓" : ""}</td></tr>`);
+    }
+    total += roomTotal;
+    rows.push(`<tbody><tr class="rgroup"><th colspan="${S.reportPhotos ? 8 : 7}">${esc(room)}<span>${roomTotal ? money(roomTotal) : ""}</span></th></tr>${body.join("")}</tbody>`);
+  }
+  $("#rp-body").innerHTML = `<div class="noprint btnrow" style="margin-bottom:12px"><button class="btn tape" data-rprint>Print or save as PDF</button>
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rp-photos" ${S.reportPhotos ? "checked" : ""}> Include photos</label></div>
+    <div class="report"><h2>Home inventory</h2><p class="hint">${new Date().toLocaleDateString()} · ${[...S.boxes.values()].reduce((n, b) => n + b.items.length, 0)} items · total value <b>${money(total)}</b></p>
+      <div class="rtable"><table><thead><tr>${S.reportPhotos ? "<th></th>" : ""}<th>Item</th><th>Where</th><th class="num">Qty</th><th class="num">Value</th><th>Purchased</th><th>Serial</th><th>Receipt</th></tr></thead>
+      ${rows.join("")}</table></div></div>`;
+  drawCrops($("#rp-body"));
+}
+document.addEventListener("change", (e) => { if (e.target.id === "rp-photos") { S.reportPhotos = e.target.checked; renderReport(); } });
+
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {
   const el = $("#s-body");
@@ -1575,6 +1744,7 @@ async function renderSettings() {
     <section><div class="bh"><h2>Labels</h2></div>
       <div class="btnrow"><button class="btn ghost" data-labels>Print QR labels…</button></div>
       <p class="hint">Stick a label on each box. Scanning it with the phone camera opens that box.</p></section>
+    <section><div class="bh"><h2>Insurance and export</h2></div>${exportSection()}</section>
     <section><div class="bh"><h2>App</h2></div>${appSection()}</section>
     <section><div class="bh"><h2>Offline</h2></div><div id="offsec"></div></section>
     <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}

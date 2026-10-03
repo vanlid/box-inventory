@@ -118,6 +118,20 @@ lend out?"), answers briefly, and shows the matching boxes and items as tappable
 fast model (`CLAUDE_ASK_MODEL`, default `haiku`), runs without any tools, and can only point to
 boxes and items that exist.
 
+## Insurance details and export
+
+Tap **Details** on any item (or open a tracked item) to add its **value**, **purchase date**,
+**serial number** and a **receipt photo**. Settings → **Insurance and export** sets the currency and
+downloads everything as a **spreadsheet (CSV)**, or opens a **printable report** grouped by room with
+totals and optional photos (print it, or save it as a PDF). Receipts are included in backups.
+
+## Lending things out
+
+Set a tracked item to **Lent out** to note who borrowed it and when it's due back. The Tracked tab's
+**Lent out** filter lists them, overdue items show in red, and the app reminds you when something is
+overdue. **Add reminder to calendar** downloads a calendar event with an alert, so your phone's own
+calendar reminds you on the day. **It's back** puts it home again; the history remembers who had it.
+
 ## Offline copy (per device)
 
 Settings → **Offline → Keep an offline copy on this device** stores the inventory and smaller copies
