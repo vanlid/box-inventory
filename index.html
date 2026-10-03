@@ -236,6 +236,14 @@ canvas.thumb56 { display: block; }
 .items .pick { width: 22px; height: 22px; justify-self: center; }
 #selbar:empty { display: none; }
 .askbox { margin-bottom: 14px; display: grid; gap: 10px; }
+.qwrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.qwrap .search { padding-right: 46px; width: 100%; }
+.mic { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: transparent; color: var(--muted); display: grid; place-items: center; padding: 0; }
+.mic svg { width: 22px; height: 22px; }
+.mic.on { background: var(--danger); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--danger) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
 .items li.more { display: block; background: var(--bg); padding: 10px 12px; }
 .morefields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .morefields .field input { padding: 7px 9px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); width: 100%; min-width: 0; }
@@ -301,7 +309,8 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
       <button data-tab="list">Places</button><button data-tab="things">Tracked</button><button data-tab="laundry">Laundry</button>
     </nav>
     <div class="searchrow" id="searchrow" hidden>
-      <input id="q" class="search" type="search" placeholder="Find anything… e.g. HDMI, krill, hoodie" autocomplete="off" aria-label="Search all boxes">
+      <span class="qwrap"><input id="q" class="search" type="search" placeholder="Find anything… e.g. HDMI, krill, hoodie" autocomplete="off" aria-label="Search all boxes">
+        <button id="mic" class="mic" type="button" hidden aria-label="Ask by voice" title="Ask by voice"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" fill="currentColor"/></svg></button></span>
       <button id="newbox" class="btn tape">+ Box</button>
       <button id="newspot" class="btn ghost" title="A place that isn't a box: wardrobe shelf, laundry basket…">+ Spot</button>
     </div>
@@ -1712,6 +1721,44 @@ function renderReport() {
 }
 document.addEventListener("change", (e) => { if (e.target.id === "rp-photos") { S.reportPhotos = e.target.checked; renderReport(); } });
 
+
+/* ---------- voice search: speak a question, it goes straight to Claude ---------- */
+const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voiceLang = () => store.get("voiceLang") || navigator.language || "sv-SE";
+let listening = null;
+function voiceReady() { $("#mic").hidden = !Speech || S.offline; }
+$("#mic").onclick = () => {
+  if (listening) { listening.stop(); return; }
+  const rec = new Speech();
+  rec.lang = voiceLang(); rec.interimResults = true; rec.maxAlternatives = 1;
+  listening = rec; $("#mic").classList.add("on"); $("#mic").setAttribute("aria-label", "Stop listening");
+  let text = "";
+  rec.onresult = (e) => {
+    text = [...e.results].map((r) => r[0].transcript).join(" ").trim();
+    $("#q").value = text; renderList();
+  };
+  rec.onerror = (e) => {
+    const msg = { "not-allowed": "Microphone access was blocked. Allow it in the browser's site settings.", "no-speech": "Didn't hear anything. Try again.",
+      network: "Voice search needs a connection to the browser's speech service.", "language-not-supported": "That language isn't supported here. Change it in Settings → App." }[e.error];
+    if (msg) $("#list").insertAdjacentHTML("afterbegin", `<p class="notice">${esc(msg)}</p>`);
+  };
+  rec.onend = () => {
+    listening = null; $("#mic").classList.remove("on"); $("#mic").setAttribute("aria-label", "Ask by voice");
+    if (text) askClaude(text);  // a spoken search is a question: ask right away
+  };
+  try { rec.start(); } catch { rec.onend(); }
+};
+voiceReady();
+function voiceSection() {
+  if (!Speech) return `<p class="hint">Voice search isn't available in this browser (it works in Chrome, Edge and Safari).</p>`;
+  const opts = [["", `Automatic (${navigator.language || "browser"})`], ["sv-SE", "Svenska"], ["en-US", "English"], ["nb-NO", "Norsk"], ["da-DK", "Dansk"], ["fi-FI", "Suomi"], ["de-DE", "Deutsch"]];
+  return `<div class="field" style="max-width:260px"><label for="voice-lang">Voice search language</label><select id="voice-lang" class="field-sel">
+    ${opts.map(([v, l]) => `<option value="${v}" ${(store.get("voiceLang") || "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+    <p class="hint">Tap the microphone in the search box and ask, e.g. “var ligger mitt pass?”. ${/Chrome|Edg\//.test(navigator.userAgent)
+      ? "In Chrome and Edge, the browser sends the audio to its speech service (Google or Microsoft) to turn it into text." : "Safari usually turns speech into text on the device."}</p>`;
+}
+document.addEventListener("change", (e) => { if (e.target.id === "voice-lang") store.set("voiceLang", e.target.value); });
+
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {
   const el = $("#s-body");
@@ -1745,7 +1792,7 @@ async function renderSettings() {
       <div class="btnrow"><button class="btn ghost" data-labels>Print QR labels…</button></div>
       <p class="hint">Stick a label on each box. Scanning it with the phone camera opens that box.</p></section>
     <section><div class="bh"><h2>Insurance and export</h2></div>${exportSection()}</section>
-    <section><div class="bh"><h2>App</h2></div>${appSection()}</section>
+    <section><div class="bh"><h2>App</h2></div>${appSection()}${voiceSection()}</section>
     <section><div class="bh"><h2>Offline</h2></div><div id="offsec"></div></section>
     <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}
     ${S.auth?.auth ? "" : `<p class="hint">Sign-in is turned off on this server (AUTH=off).</p>`}`;

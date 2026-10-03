@@ -118,6 +118,11 @@ lend out?"), answers briefly, and shows the matching boxes and items as tappable
 fast model (`CLAUDE_ASK_MODEL`, default `haiku`), runs without any tools, and can only point to
 boxes and items that exist.
 
+**Voice:** tap the microphone in the search box and say the question ("var ligger mitt pass?"). It's
+written into the search box and asked right away. Works in Chrome, Edge and Safari; the language
+follows the browser or can be set under Settings → App. In Chrome and Edge, the browser sends the
+audio to its speech service (Google or Microsoft) to turn it into text.
+
 ## Insurance details and export
 
 Tap **Details** on any item (or open a tracked item) to add its **value**, **purchase date**,

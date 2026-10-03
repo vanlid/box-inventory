@@ -180,6 +180,7 @@ const Offline = (() => {
       if (bytes) urls.set(k.startsWith("r/") ? k.split("/").slice(0, 2).join("/") : k, URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })));
     }
     S.offline = true; S.offlineAt = snap.at;
+    window.voiceReady?.();  // voice search needs a connection
   }
   function revokeUrls() { for (const u of urls.values()) URL.revokeObjectURL(u); urls.clear(); }
   const photoUrl = (placeId, name) => urls.get(`p/${placeId}/${name}`) || "";
@@ -432,7 +433,7 @@ const Offline = (() => {
       S.auth = st;
       if (st.auth && !st.loggedIn) { S.offline = false; revokeUrls(); return showAuth("Back online. Sign in to send your offline changes.", true); }
       const r = await syncUp();
-      S.offline = false; revokeUrls(); banner(); show("list"); await load();
+      S.offline = false; revokeUrls(); banner(); window.voiceReady?.(); show("list"); await load();
       if (r.sent) note(`Back online: ${r.sent} offline change${r.sent === 1 ? "" : "s"} synced.`);
       showConflicts(r.conflicts);
     } catch (e) {
