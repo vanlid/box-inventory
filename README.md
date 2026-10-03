@@ -107,6 +107,28 @@ Open the app at its https address (see "Sign-in with passkeys"), then:
 The installed app opens full-screen like a normal app, and passkeys work in it. When photos are
 shared into it, it asks which box or spot they belong to, then uploads and scans them as usual.
 
+## Offline copy (per device)
+
+Settings → **Offline → Keep an offline copy on this device** stores the inventory and smaller copies
+of the photos on that phone or computer, **encrypted**, so you can look things up without a
+connection (in the basement, or when the server is down). Open the app offline and it asks for your
+passkey to unlock the copy.
+
+- **Passkey-locked** where the browser and passkey support the PRF extension (current Chrome,
+  Safari on iOS 18 / macOS 15, recent Firefox, with passkeys in Google Password Manager or iCloud
+  Keychain): the copy can only be decrypted after your fingerprint, face or screen lock.
+  Passkeys created with an older version of the app don't have this. Add a new passkey to get it.
+- Otherwise **device-locked**: a key that can't be copied off the device, plus a passkey check the
+  app verifies itself before showing anything.
+- **Changes made offline** (editing boxes and items, moving items, tracked-item status, adding photos
+  to existing boxes) wait in an encrypted outbox and are sent when the server is back. Item edits are
+  merged with whatever changed on the server meanwhile; if the same thing was changed differently on
+  another device, the app asks which to keep. Photos taken offline are scanned once they're uploaded.
+  New boxes need a connection.
+- The copy refreshes itself whenever the app is online, is deleted after 30 days without refreshing,
+  and is deleted if the passkey it's locked to is removed. Unlocking offline needs a passkey that's on
+  that device (the QR-code option needs a connection).
+
 ## QR labels
 
 Settings → **Print QR labels** (or **Print label** on a box) prints stickers with the box number,

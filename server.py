@@ -396,7 +396,7 @@ class H(BaseHTTPRequestHandler):
 
     def guard(self, path):
         """True if the request may proceed; otherwise sends 401/403 and returns False."""
-        if (not AUTH_ON or path in PUBLIC or path.startswith(("/api/backup/", "/icons/", "/vendor/"))  # backup routes check access themselves
+        if (not AUTH_ON or path in PUBLIC or path.startswith(("/api/backup/", "/icons/", "/vendor/", "/app/"))  # backup routes check access themselves
                 or re.fullmatch(r"/[bBtT]/\w+", path)):  # label links open the app page, which then asks to sign in
             return True
         if self.command != "GET":
@@ -451,6 +451,15 @@ class H(BaseHTTPRequestHandler):
                 a = load_auth()
             return self.send(200, [{"id": c["id"], "name": c["name"], "created": c["created"], "lastUsed": c["lastUsed"],
                                     "current": c["id"] == s["cred"]} for c in a["credentials"]])
+        if p == "/api/auth/passkeys/keys" and cmd == "GET":
+            # Public keys (not secret) so a device can check a passkey itself while offline.
+            _, s = self.session()
+            if not s:
+                return self.fail(401, "Sign in first.", signIn=True)
+            with lock:
+                a = load_auth()
+            return self.send(200, {"rpId": a["rp"] and a["rp"]["id"], "current": s["cred"],
+                                   "keys": [{"id": c["id"], "key": c["key"]} for c in a["credentials"]]})
         m = re.fullmatch(r"/api/auth/passkeys/([\w-]+)", p)
         if m and cmd in ("PATCH", "DELETE"):
             if not self.session()[1]:
@@ -602,7 +611,7 @@ class H(BaseHTTPRequestHandler):
         cmd = self.command
         if (p == "/" or re.fullmatch(r"/[bBtT]/\w+", p)) and cmd == "GET":  # /b/7 and /t/… are QR label links (any case)
             return self.send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
-        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|favicon\.ico|icons/[\w-]+\.png|vendor/[\w-]+\.js)", p)
+        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|favicon\.ico|icons/[\w-]+\.png|(?:vendor|app)/[\w-]+\.js)", p)
         if m and cmd == "GET":
             f = STATIC / m.group(1)
             if not f.is_file():

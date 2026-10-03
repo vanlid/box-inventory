@@ -290,6 +290,7 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
     <div class="roomrow" id="roomrow" hidden></div>
   </header>
 
+  <div id="offbar"></div>
   <div id="banner"></div>
 
   <main id="authview" hidden></main>
@@ -342,6 +343,7 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
 </datalist>
 
 <script src="/vendor/qrcode.js"></script>
+<script src="/app/offline.js"></script><!-- before the main script: startup may need it at once when offline -->
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -353,9 +355,17 @@ const S = { auth: null, boxes: new Map(), rooms: [], loaded: false, view: "list"
   fresh: new Set(), pending: false, room: store.get("room") || "all", addingRoom: false };
 
 /* ---------- server calls ---------- */
-async function api(method, path, body, type = "application/json") {
-  const r = await fetch(path, { method, credentials: "same-origin", headers: body ? { "Content-Type": type } : {},
-    body: body && type === "application/json" ? JSON.stringify(body) : body });
+// While offline, calls go to the encrypted copy on this device (static/app/offline.js).
+const api = (method, path, body, type = "application/json") => S.offline ? Offline.api(method, path, body, type) : realApi(method, path, body, type);
+async function realApi(method, path, body, type = "application/json") {
+  let r;
+  try {
+    r = await fetch(path, { method, credentials: "same-origin", headers: body ? { "Content-Type": type } : {},
+      body: body && type === "application/json" ? JSON.stringify(body) : body });
+  } catch {
+    if (await Offline.has()) $("#offbar").innerHTML = `<div class="banner"><span class="msg">Can't reach the server.</span><button class="btn ghost" data-gooffline>Use the offline copy</button></div>`;
+    throw Object.assign(new Error("Can't reach the server. Check your connection."), { network: true });
+  }
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && data.signIn) { showAuth(); throw new Error(data.error || "Sign in first."); }
   if (!r.ok) throw new Error(data.error || "The server didn't respond. Is the computer running it on?");
@@ -374,6 +384,7 @@ async function load() {
     render();
     offerShared();
     openDeep();
+    Offline.afterLoad();
   } catch (e) { if (S.view !== "auth") $("#list").innerHTML = `<p class="notice">${esc(e.message)}</p>`; }
 }
 
@@ -403,8 +414,8 @@ function show(view) {
 }
 
 async function boot() {
-  try { S.auth = await (await fetch("/api/auth/state", { credentials: "same-origin" })).json(); }
-  catch { S.auth = { auth: false, loggedIn: false }; }
+  try { S.auth = await (await fetch("/api/auth/state", { credentials: "same-origin", cache: "no-store" })).json(); }
+  catch { return Offline.showUnlock(); }  // server unreachable: offer this device's offline copy
   if (S.auth.auth && !S.auth.loggedIn) return showAuth();
   show("list"); load();
 }
@@ -429,7 +440,8 @@ function passkeyError(e) {
 
 async function createPasskey(setupCode, name) {
   const o = await api("POST", "/api/auth/register/options", { setupCode });
-  const cred = await navigator.credentials.create({ publicKey: { ...o, challenge: b64d(o.challenge),
+  // prf: lets this passkey also lock the offline copy (static/app/offline.js); ignored where unsupported.
+  const cred = await navigator.credentials.create({ publicKey: { ...o, extensions: { prf: {} }, challenge: b64d(o.challenge),
     user: { ...o.user, id: b64d(o.user.id) }, excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: b64d(c.id) })) } });
   await api("POST", "/api/auth/register/verify", { setupCode, name, credential: { id: cred.id, rawId: b64e(cred.rawId), type: cred.type,
     response: { clientDataJSON: b64e(cred.response.clientDataJSON), attestationObject: b64e(cred.response.attestationObject) } } });
@@ -534,7 +546,7 @@ $("#detail").addEventListener("focusout", () => setTimeout(() => {
 
 // Boxes first in label order, then spots by name.
 function sorted() { return [...S.boxes.values()].sort((a, b) => (a.kind === "spot") - (b.kind === "spot") || (a.number || 0) - (b.number || 0) || (a.name || "").localeCompare(b.name || "")); }
-const photoSrc = (b, name) => `/photos/${b.id}/${name}`;
+const photoSrc = (b, name) => S.offline ? Offline.photoUrl(b.id, name) : `/photos/${b.id}/${name}`;
 const isSpot = (b) => b?.kind === "spot";
 const placeName = (b) => !b ? "a deleted place" : isSpot(b) ? (b.name || "Unnamed spot") : b.name ? `Box ${num(b.number)} · ${b.name}` : `Box ${num(b.number)}`;
 const placeShort = (b) => !b ? "a deleted place" : isSpot(b) ? (b.name || "Unnamed spot") : `Box ${num(b.number)}`;
@@ -933,7 +945,7 @@ async function scan(id, photos, mode) {
       ? (k ? `Added ${k} item${k > 1 ? "s" : ""}. Tap a thumbnail to see where it is; fix anything that's off.` : "No new items spotted in that photo.")
       : `Re-scanned: ${k} new item${k === 1 ? "" : "s"}${r.box.items.length - k ? `, kept ${r.box.items.length - k} you added, edited or tracked` : ""}.`) + (sg ? ` Spotted ${sg} tracked item${sg > 1 ? "s" : ""}: confirm them below.` : ""),
       `<button class="linkbtn" data-undo>Undo</button>`);
-  } catch (e) { setStatus("err", e.message + " The photos are saved; tap Re-scan to try again."); }
+  } catch (e) { if (e.queued) setStatus("ok", e.message); else setStatus("err", e.message + " The photos are saved; tap Re-scan to try again."); }
 }
 
 
@@ -1100,7 +1112,7 @@ const trackedFrom = (b, i) => Object.values(S.things).find((t) => t.from?.place 
 const unaccounted = (t) => t.kind === "group" ? Math.max(0, t.total - Object.values(t.counts || {}).reduce((a, n) => a + n, 0)) : 0;
 const isAway = (t) => t.kind !== "group" && t.home && t.lastSeen?.place && t.lastSeen.place !== t.home;
 const isStale = (t) => !t.lastSeen || Date.now() - t.lastSeen.time > STALE_DAYS * 86400000;
-const refSrc = (t) => `/refs/${t.id}.jpg?v=${t.refAt || 0}`;
+const refSrc = (t) => S.offline ? Offline.refUrl(t.id) : `/refs/${t.id}.jpg?v=${t.refAt || 0}`;
 function thingPic(t, cls = "thumb56") {
   if (t.hasRef) return `<img class="${cls}" src="${refSrc(t)}" alt="" loading="lazy">`;
   const ls = t.lastSeen, b = ls && S.boxes.get(ls.place);
@@ -1496,6 +1508,11 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-bclose]"
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {
   const el = $("#s-body");
+  if (S.offline) {  // only the offline copy itself can be managed without the server
+    el.innerHTML = `<section><div class="bh"><h2>Offline</h2></div><p>You're using this device's offline copy. Other settings need the server.</p>
+      <div class="btnrow"><button class="btn ghost" data-reconnect>Reconnect</button></div></section>`;
+    return;
+  }
   const rooms = S.rooms.map((r) => {
     const n = [...S.boxes.values()].filter((b) => b.room === r.id).length;
     return `<li><span><input value="${esc(r.name)}" data-rename-room="${esc(r.id)}" aria-label="Room name"><span class="sub">${n} box${n === 1 ? "" : "es"}</span></span>
@@ -1521,9 +1538,11 @@ async function renderSettings() {
       <div class="btnrow"><button class="btn ghost" data-labels>Print QR labels…</button></div>
       <p class="hint">Stick a label on each box. Scanning it with the phone camera opens that box.</p></section>
     <section><div class="bh"><h2>App</h2></div>${appSection()}</section>
+    <section><div class="bh"><h2>Offline</h2></div><div id="offsec"></div></section>
     <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}
     ${S.auth?.auth ? "" : `<p class="hint">Sign-in is turned off on this server (AUTH=off).</p>`}`;
   backupPanel($("#bk"));
+  Offline.section().then((h) => { const x = $("#offsec"); if (x) x.innerHTML = h; });
   const so = $("#signout");
   if (so) so.onclick = async () => { await api("POST", "/api/auth/logout", {}).catch(() => {}); S.auth.loggedIn = false; showAuth(); };
 }
