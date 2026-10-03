@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
+# Upgrade too, so Debian security fixes apply even before the base image is rebuilt with them.
 RUN apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
