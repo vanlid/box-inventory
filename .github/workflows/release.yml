@@ -24,12 +24,12 @@ jobs:
           tar -czf box-inventory.tar.gz box-inventory
           zip -qr box-inventory.zip box-inventory
           sed "s#ghcr.io/vanlid/box-inventory#ghcr.io/${GITHUB_REPOSITORY,,}#" ../compose.image.yaml > compose.yaml
-          cp ../compose.tailscale.yaml .
+          cp ../compose.tailscale.yaml ../compose.ollama.yaml .
           cp ../.env.example env.example
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            dist/box-inventory.tar.gz dist/box-inventory.zip dist/compose.yaml dist/compose.tailscale.yaml dist/env.example install.sh install.ps1
+            dist/box-inventory.tar.gz dist/box-inventory.zip dist/compose.yaml dist/compose.tailscale.yaml dist/compose.ollama.yaml dist/env.example install.sh install.ps1
 

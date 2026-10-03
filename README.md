@@ -310,6 +310,23 @@ To remove the service: `./install-mac.sh uninstall`, `./install-linux.sh uninsta
   runs with only the Read tool, looks at the photos and returns a list.
 - Scans use the `sonnet` model (`CLAUDE_MODEL` to change it) and look at the 8 newest photos of a box at most.
 
+## Local models (optional)
+
+Instead of Claude, photo scans and/or questions can use a model running on your own hardware through
+[Ollama](https://ollama.com). The model is loaded only while it's working and unloaded after
+`OLLAMA_KEEP_ALIVE` (default 5 minutes), so it doesn't hold memory between scans. Local vision models
+list items well but are less accurate than Claude, especially at locating items in the photo; each
+box's **Re-scan** has a "…with Claude" option for when you want the better result.
+
+- **Mac (Apple Silicon):** install the Ollama Mac app, which uses the GPU and unified memory. Docker
+  on macOS can't use the Apple GPU, so don't run Ollama in Docker there. In `.env`:
+  `SCAN_ENGINE=local` and, if the app runs in Docker, `OLLAMA_URL=http://host.docker.internal:11434`.
+- **PC with an NVIDIA GPU:** add `compose.ollama.yaml`, which runs Ollama in Docker with GPU access.
+  In `.env`: `COMPOSE_FILE=compose.yaml:compose.ollama.yaml` (Windows: `;`) and `SCAN_ENGINE=local`.
+- **Download the model:** Settings → **Scanning** checks Ollama and has a **Download model** button
+  (or run `ollama pull qwen2.5vl:7b`). Other vision models work too, e.g. `qwen3-vl`, `gemma3`; set
+  `OLLAMA_MODEL`. `ASK_ENGINE=local` uses `OLLAMA_ASK_MODEL` (default: the same model) for questions.
+
 ## Releases and updates (for maintainers)
 
 - Push a tag like `v1.2.0` to publish a release with the download bundles (`.github/workflows/release.yml`).

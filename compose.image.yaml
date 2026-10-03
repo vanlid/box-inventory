@@ -16,6 +16,14 @@ services:
       MS_CLIENT_ID: ${MS_CLIENT_ID:-}
       MS_TENANT: ${MS_TENANT:-consumers}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      SCAN_ENGINE: ${SCAN_ENGINE:-claude}
+      ASK_ENGINE: ${ASK_ENGINE:-claude}
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5vl:7b}
+      OLLAMA_ASK_MODEL: ${OLLAMA_ASK_MODEL:-}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach Ollama running on this computer (e.g. the Mac app)
     volumes:
       - ./data:/app/data
     restart: unless-stopped

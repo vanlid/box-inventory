@@ -54,6 +54,14 @@ TOKEN_FILE = ROOT / ".claude-token"
 PORT = int(os.environ.get("PORT", "8765"))
 MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")
 ASK_MODEL = os.environ.get("CLAUDE_ASK_MODEL", "haiku")  # plain-language questions: fast and cheap
+# Optional local models through Ollama: loaded only for a request, unloaded after OLLAMA_KEEP_ALIVE.
+SCAN_ENGINE = os.environ.get("SCAN_ENGINE", "claude").strip().lower()
+ASK_ENGINE = os.environ.get("ASK_ENGINE", "claude").strip().lower()
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5vl:7b")
+OLLAMA_ASK_MODEL = os.environ.get("OLLAMA_ASK_MODEL", OLLAMA_MODEL)
+OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "5m")
+LOCAL_ON = "local" in (SCAN_ENGINE, ASK_ENGINE) or bool(os.environ.get("OLLAMA_URL"))
 AUTH_ON = os.environ.get("AUTH", "on").strip().lower() not in ("off", "0", "false", "no")
 MAX_UPLOAD = 25 * 1024 * 1024
 MAX_SCAN_PHOTOS = 8
@@ -334,6 +342,69 @@ def run_claude(prompt, schema, model, tools=(), dirs=(), timeout=600):
     return data
 
 
+def ollama(path, body=None, timeout=900):
+    """Call the Ollama API. Errors become messages a person can act on."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(OLLAMA_URL + path, data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json"}, method="POST" if body is not None else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        if e.code == 404 and "not found" in detail:
+            raise RuntimeError(f"The local model isn't downloaded yet. Use Settings → Scanning → Download model (or run: ollama pull {body.get('model') if body else OLLAMA_MODEL}).")
+        raise RuntimeError(f"Ollama refused the request ({e.code}): {detail[:200]}")
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"Can't reach Ollama at {OLLAMA_URL}. Is it running? ({getattr(e, 'reason', e)})")
+
+
+def run_ollama(prompt, schema, model, images=()):
+    """One answer from a local model, as JSON following the schema. Images are file paths."""
+    import base64
+    msg = {"role": "user", "content": prompt}
+    if images:
+        msg["images"] = [base64.b64encode(Path(p).read_bytes()).decode() for p in images]
+    out = ollama("/api/chat", {"model": model, "messages": [msg], "format": schema, "stream": False,
+                               "keep_alive": OLLAMA_KEEP_ALIVE, "options": {"temperature": 0}})
+    try:
+        return json.loads(out.get("message", {}).get("content") or "{}")
+    except ValueError:
+        raise RuntimeError("The local model's answer wasn't valid JSON. Try again, or scan with Claude.")
+
+
+PULL = {"state": None, "model": None, "error": None}  # background model download
+
+
+def pull_model():
+    def go():
+        PULL.update(state="downloading", model=OLLAMA_MODEL, error=None)
+        try:
+            for m in dict.fromkeys([OLLAMA_MODEL, OLLAMA_ASK_MODEL]):
+                PULL["model"] = m
+                ollama("/api/pull", {"model": m, "stream": False}, timeout=7200)
+            PULL["state"] = "done"
+        except Exception as e:
+            PULL.update(state="error", error=str(e))
+    if PULL["state"] != "downloading":
+        threading.Thread(target=go, daemon=True).start()
+
+
+def engines_status(check=False):
+    st = {"scan": SCAN_ENGINE, "ask": ASK_ENGINE, "local": LOCAL_ON, "claudeModel": MODEL, "askModel": ASK_MODEL,
+          "localModel": OLLAMA_MODEL, "localAskModel": OLLAMA_ASK_MODEL, "keepAlive": OLLAMA_KEEP_ALIVE, "pull": PULL}
+    if check and LOCAL_ON:
+        try:
+            names = {m["name"] for m in ollama("/api/tags", timeout=5).get("models", [])}
+            want = {OLLAMA_MODEL, OLLAMA_ASK_MODEL}
+            have = {w for w in want if w in names or (":" not in w and f"{w}:latest" in names)}
+            st["ollama"] = {"reachable": True, "missing": sorted(want - have)}
+        except RuntimeError as e:
+            st["ollama"] = {"reachable": False, "error": str(e)}
+    return st
+
+
 ASK_SCHEMA = {
     "type": "object",
     "properties": {
@@ -386,17 +457,22 @@ Inventory:
 {inventory_text(db)}
 
 Question: {question}"""
+    if ASK_ENGINE == "local":
+        return run_ollama(prompt, ASK_SCHEMA, OLLAMA_ASK_MODEL)
     return run_claude(prompt, ASK_SCHEMA, ASK_MODEL, timeout=180)
 
 
-def scan(box, photo_paths, known, tracked=()):
-    files = "\n".join(f"Photo {i}: {p}" for i, p in enumerate(photo_paths, 1))
+def scan(box, photo_paths, known, tracked=(), engine="claude"):
+    local = engine == "local"
+    files = ("\n".join(f"Photo {i} is attached image {i}." for i in range(1, len(photo_paths) + 1)) if local
+             else "\n".join(f"Photo {i}: {p}" for i, p in enumerate(photo_paths, 1)))
     known_txt = ("Items already recorded for this box. Don't list these again, unless you clearly see more of them "
                  "or one has no position yet:\n" + "\n".join(f"- {i['qty']}x {i['name']}" for i in known) + "\n\n") if known else ""
     title = f' ("{box["name"]}")' if box.get("name") else ""
     where = (f"numbered storage box {box['number']}{title}" if box.get("kind", "box") == "box"
              else f'the place "{box.get("name") or "unnamed spot"}" (a spot in a room, not a box)')
     sheet = REFS / "sheet.jpg"
+    use_sheet = bool(tracked) and sheet.exists() and any(t.get("hasRef") for t in tracked)
     track_txt = ""
     if tracked:
         lines = "\n".join(f"- {t['code']}: {t['name']}" + (f" ({t['note']})" if t.get("note") else "")
@@ -405,14 +481,14 @@ def scan(box, photo_paths, known, tracked=()):
         track_txt = f"""
 The owner also tracks these specific items, to know where each one is:
 {lines}
-{f"Their reference pictures are tiles labelled with the code in this sheet (Read it too): {sheet}" if sheet.exists() and any(t.get("hasRef") for t in tracked) else ""}
+{(f"Their reference pictures are tiles labelled with the code in the last attached image." if local else f"Their reference pictures are tiles labelled with the code in this sheet (Read it too): {sheet}") if use_sheet else ""}
 In "sightings", report each tracked item you can see in the photos, with the photo number, a tight box
 around it, and confidence. Only report it when it looks like that same item (colour, pattern, print), not
 just the same kind of thing; use "low" when unsure. For groups, put how many you see in "count".
 Still list everything in "items" as usual, tracked or not.
 """
     prompt = f"""You are cataloguing the contents of {where} so the owner can search for things later.
-Use the Read tool to look at each of these photos:
+{"The photos are attached:" if local else "Use the Read tool to look at each of these photos:"}
 {files}
 
 {known_txt}List every distinct physical item you can see inside or on the box.
@@ -426,6 +502,8 @@ Use the Read tool to look at each of these photos:
   as a fraction of the image width (left/right) and height (top/bottom). For a group of identical items, cover the group.
 Also suggest a short 2-4 word name for the box and pick a category.
 {track_txt}"""
+    if local:
+        return run_ollama(prompt, SCHEMA, OLLAMA_MODEL, images=list(photo_paths) + ([sheet] if use_sheet else []))
     return run_claude(prompt, SCHEMA, MODEL, tools=["Read"], dirs=[PHOTOS, REFS])
 
 
@@ -751,7 +829,14 @@ class H(BaseHTTPRequestHandler):
             return self.things_route(p)
         if p == "/api/boxes" and cmd == "GET":
             with lock:
-                return self.send(200, load())
+                return self.send(200, {**load(), "engines": engines_status()})
+        if p == "/api/engines" and cmd == "GET":
+            return self.send(200, engines_status(check=True))
+        if p == "/api/engines/pull" and cmd == "POST":
+            if not LOCAL_ON:
+                return self.fail(400, "No local model is set up on this server.")
+            pull_model()
+            return self.send(200, engines_status())
         if p == "/api/boxes" and cmd == "POST":
             req = self.json_body() or {}
             with lock:
@@ -948,6 +1033,9 @@ class H(BaseHTTPRequestHandler):
         if req is None:
             return self.fail(400, "Bad request")
         mode = "replace" if req.get("mode") == "replace" else "add"
+        engine = req.get("engine") if req.get("engine") in ("claude", "local") else SCAN_ENGINE
+        if engine == "local" and not LOCAL_ON:
+            return self.fail(400, "No local model is set up on this server.")
         with lock:
             box = load()["boxes"].get(key)
         if not box:
@@ -959,7 +1047,7 @@ class H(BaseHTTPRequestHandler):
         try:
             with lock:
                 tracked = list(load()["things"].values())
-            res = scan(box, [str(PHOTOS / key / n) for n in names], box["items"] if mode == "add" else [], tracked)
+            res = scan(box, [str(PHOTOS / key / n) for n in names], box["items"] if mode == "add" else [], tracked, engine)
         except subprocess.TimeoutExpired:
             return self.fail(504, "The scan took too long. Try fewer photos at a time.")
         except Exception as e:
@@ -1010,7 +1098,8 @@ class H(BaseHTTPRequestHandler):
             seen = TH.sightings_from_scan(db, key, res.get("sightings"), names)
             box["updatedAt"] = now_ms()
             save(db)
-        self.send(200, {"box": box, "added": [i["id"] for i in added], "before": before, "sightings": len(seen)})
+        self.send(200, {"box": box, "added": [i["id"] for i in added], "before": before, "sightings": len(seen),
+                        "engine": engine, "model": OLLAMA_MODEL if engine == "local" else MODEL})
 
     # --- tracked items ---
     def things_route(self, p):
@@ -1089,6 +1178,8 @@ if __name__ == "__main__":
         print(f"First-time setup code for your first passkey: {setup_code()}  (also in data/setup-code.txt)", flush=True)
     elif not AUTH_ON:
         print("Sign-in is OFF (AUTH=off): anyone who can reach this port can use the app.", flush=True)
+    if LOCAL_ON:
+        print(f"Local models via Ollama at {OLLAMA_URL}: scans={SCAN_ENGINE} ({OLLAMA_MODEL}), questions={ASK_ENGINE}, unloaded after {OLLAMA_KEEP_ALIVE}", flush=True)
     if BACKUPS.available():
         print("Backups available to: " + ", ".join(a["label"] for a in BACKUPS.available()), flush=True)
     threading.Thread(target=BACKUPS.scheduler, daemon=True).start()

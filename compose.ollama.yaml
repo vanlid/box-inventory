@@ -1,0 +1,30 @@
+# Optional: run local AI models next to the app with an NVIDIA GPU (Windows/Linux PC).
+# Models are loaded only while scanning and unloaded after OLLAMA_KEEP_ALIVE (default 5 minutes).
+# On a Mac, don't use this file: Docker on macOS can't use the Apple GPU. Install the Ollama Mac app
+# instead and set OLLAMA_URL=http://host.docker.internal:11434 in .env.
+#
+# Turn it on in .env (use ; instead of : on Windows):
+#   COMPOSE_FILE=compose.yaml:compose.ollama.yaml
+#   SCAN_ENGINE=local
+# Needs the NVIDIA driver and the NVIDIA Container Toolkit (Docker Desktop on Windows includes GPU support).
+services:
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+    volumes:
+      - ./ollama:/root/.ollama  # downloaded models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  box-inventory:
+    environment:
+      OLLAMA_URL: http://ollama:11434
+    depends_on:
+      - ollama

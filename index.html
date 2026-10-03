@@ -337,7 +337,7 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
     <section class="block" id="d-seen" hidden></section>
     <section class="block">
       <div class="bh"><h2 id="items-h">Contents</h2><span class="btnrow"><button class="btn ghost" id="selectmode">Select</button>
-        <button class="btn ghost" id="rescan" hidden>Re-scan all photos</button></span></div>
+        <button class="btn ghost" id="rescan" hidden>Re-scan all photos</button><button class="linkbtn" id="rescan-alt" hidden></button></span></div>
       <div id="selbar"></div>
       <div id="d-items"></div>
       <form class="additem" id="additem">
@@ -407,7 +407,7 @@ async function patch(id, data) {
 async function load() {
   try {
     const db = await api("GET", "/api/boxes");
-    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.things = db.things || {}; S.settings = db.settings || S.settings; S.loaded = true;
+    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.things = db.things || {}; S.settings = db.settings || S.settings; S.engines = db.engines || S.engines; S.loaded = true;
     if (S.room !== "all" && S.room !== "none" && !S.rooms.some((r) => r.id === S.room)) S.room = "all";
     render();
     offerShared();
@@ -679,7 +679,8 @@ function askBlock(q) {
   if (S.offline) return `<p class="hint">Asking Claude needs a connection.</p>`;
   if (!a) return `<div class="btnrow"><button class="btn ghost" data-ask>Ask: “${esc(q)}”</button>
     <span class="hint">Understands any language and vague descriptions, like “sockor” or “something to charge my laptop”.</span></div>`;
-  if (a.busy) return `<div class="st"><span class="spin" aria-hidden="true"></span><span class="msg">Asking Claude…</span></div>`;
+  const who = S.engines?.ask === "local" ? "The local model" : "Claude";
+  if (a.busy) return `<div class="st"><span class="spin" aria-hidden="true"></span><span class="msg">Asking ${who === "Claude" ? "Claude" : "the local model"}…</span></div>`;
   if (a.error) return `<p class="err">${esc(a.error)} <button class="linkbtn" data-ask>Try again</button></p>`;
   const withItems = new Set(a.matches.filter((m) => m.item || m.thing).map((m) => m.place));
   const cards = a.matches.filter((m) => m.item || m.thing || !withItems.has(m.place)).map((m) => {
@@ -692,7 +693,7 @@ function askBlock(q) {
       <span class="meta"><b>${esc(it.name)}</b><span class="sub">${esc(placeName(b))}${m.why ? " · " + esc(m.why) : ""}</span></span></button>`;
     return b ? boxCard(b) : "";
   }).join("");
-  return `<div class="answer"><p><b>Claude:</b> ${esc(a.answer)}</p>${cards ? `<div class="finds">${cards}</div>` : ""}</div>`;
+  return `<div class="answer"><p><b>${who}:</b> ${esc(a.answer)}</p>${cards ? `<div class="finds">${cards}</div>` : ""}</div>`;
 }
 async function askClaude(q) {
   S.ask = { q, busy: true }; renderList();
@@ -811,6 +812,9 @@ function renderDetail() {
   $("#items-h").textContent = `Contents${items.length ? " (" + items.length + ")" : ""}`;
   $("#rescan").hidden = !photos.length;
   $("#rescan").disabled = S.busy;
+  const alt = S.engines?.local ? (S.engines.scan === "local" ? "claude" : "local") : null;  // the other engine, when both exist
+  $("#rescan-alt").hidden = !photos.length || !alt; $("#rescan-alt").disabled = S.busy;
+  $("#rescan-alt").textContent = alt === "claude" ? "…with Claude" : "…with the local model"; $("#rescan-alt").dataset.engine = alt || "";
   $("#d-items").innerHTML = `<ul class="items">${items.length ? items.map((i) => `
     <li data-iid="${esc(i.id)}" class="${S.fresh.has(i.id) ? "fresh" : ""}">
       ${i.loc ? `<button class="spot" ${lbAttrs(photoSrc(b, i.loc.photo), i.loc.box, i.name + " · " + placeShort(b))} aria-label="Show ${esc(i.name)} in the photo"><canvas ${cropAttrs(photoSrc(b, i.loc.photo), i.loc.box)}></canvas></button>` : "<span></span>"}
@@ -1004,17 +1008,20 @@ async function addPhotos(files) {
   } finally { S.busy = false; if (S.open === id) renderDetail(); }
 }
 
-$("#rescan").onclick = async () => {
+async function rescan(engine) {
   const id = S.open; if (!S.boxes.get(id) || S.busy) return;
   S.busy = true; renderDetail();
-  try { await scan(id, null, "replace"); } finally { S.busy = false; if (S.open === id) renderDetail(); }
-};
+  try { await scan(id, null, "replace", engine); } finally { S.busy = false; if (S.open === id) renderDetail(); }
+}
+$("#rescan").onclick = () => rescan();
+$("#rescan-alt").onclick = (e) => rescan(e.currentTarget.dataset.engine);
 
-async function scan(id, photos, mode) {
+async function scan(id, photos, mode, engine) {
   const n = photos ? photos.length : S.boxes.get(id).photos.length;
-  setStatus("busy", `Claude is looking at ${n} photo${n > 1 ? "s" : ""}… this usually takes 20–60 seconds.`);
+  const local = (engine || S.engines?.scan) === "local";
+  setStatus("busy", `${local ? "The local model" : "Claude"} is looking at ${n} photo${n > 1 ? "s" : ""}… ${local ? "the first scan also loads the model, which can take a minute." : "this usually takes 20–60 seconds."}`);
   try {
-    const r = await api("POST", `/api/boxes/${id}/scan`, { photos, mode });
+    const r = await api("POST", `/api/boxes/${id}/scan`, { photos, mode, ...(engine ? { engine } : {}) });
     S.undo = { id, items: r.before };
     S.fresh = new Set(r.added);
     keep(r.box);
@@ -1022,7 +1029,7 @@ async function scan(id, photos, mode) {
     setStatus("ok", (mode === "add"
       ? (k ? `Added ${k} item${k > 1 ? "s" : ""}. Tap a thumbnail to see where it is; fix anything that's off.` : "No new items spotted in that photo.")
       : `Re-scanned: ${k} new item${k === 1 ? "" : "s"}${r.box.items.length - k ? `, kept ${r.box.items.length - k} you added, edited or tracked` : ""}.`) + (sg ? ` Spotted ${sg} tracked item${sg > 1 ? "s" : ""}: confirm them below.` : ""),
-      `<button class="linkbtn" data-undo>Undo</button>`);
+      `${r.engine === "local" ? `<span class="hint">local model ${esc(r.model)}</span>` : ""}<button class="linkbtn" data-undo>Undo</button>`);
   } catch (e) { if (e.queued) setStatus("ok", e.message); else setStatus("err", e.message + " The photos are saved; tap Re-scan to try again."); }
 }
 
@@ -1759,6 +1766,33 @@ function voiceSection() {
 }
 document.addEventListener("change", (e) => { if (e.target.id === "voice-lang") store.set("voiceLang", e.target.value); });
 
+
+/* ---------- scanning engines: Claude, or a local model through Ollama ---------- */
+function enginesSection() {
+  const e = S.engines; if (!e) return "";
+  const name = (k) => k === "local" ? `the local model <b>${esc(e.localModel)}</b>` : `Claude (<b>${esc(k === "scan" ? e.claudeModel : e.askModel)}</b>)`;
+  return `<p>Photos are scanned with ${e.scan === "local" ? name("local") : name("scan")}; questions are answered by
+      ${e.ask === "local" ? `the local model <b>${esc(e.localAskModel)}</b>` : `Claude (<b>${esc(e.askModel)}</b>)`}.</p>
+    ${e.local ? `<div id="eng-status"><p class="hint">Checking the local model…</p></div>`
+      : `<p class="hint">To use a local model instead (Ollama on this computer, a Mac, or a PC with a GPU), see “Local models” in the README.</p>`}`;
+}
+async function checkEngines() {
+  const el = $("#eng-status"); if (!el) return;
+  let st; try { st = await api("GET", "/api/engines"); S.engines = { ...S.engines, ...st }; } catch (x) { el.innerHTML = `<p class="err">${esc(x.message)}</p>`; return; }
+  const o = st.ollama || {}, pull = st.pull || {};
+  el.innerHTML = !o.reachable ? `<p class="err">${esc(o.error || "Ollama isn't reachable.")}</p>`
+    : pull.state === "downloading" ? `<div class="st"><span class="spin" aria-hidden="true"></span><span class="msg">Downloading ${esc(pull.model)}… this can take a while.</span></div>`
+    : o.missing?.length ? `<p>Not downloaded yet: <b>${o.missing.map(esc).join(", ")}</b></p><div class="btnrow"><button class="btn ghost" data-pull>Download model</button></div>
+        ${pull.state === "error" ? `<p class="err">${esc(pull.error)}</p>` : ""}`
+    : `<p class="okmsg">Local model ready. It's loaded only while scanning and unloaded after ${esc(st.keepAlive)} without use.</p>`;
+  if (pull.state === "downloading" && S.view === "settings") setTimeout(checkEngines, 3000);
+}
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-pull]")) return;
+  try { await api("POST", "/api/engines/pull", {}); } catch (x) { alert(x.message); }
+  checkEngines();
+});
+
 /* ---------- settings: rooms + passkeys ---------- */
 async function renderSettings() {
   const el = $("#s-body");
@@ -1791,12 +1825,14 @@ async function renderSettings() {
     <section><div class="bh"><h2>Labels</h2></div>
       <div class="btnrow"><button class="btn ghost" data-labels>Print QR labels…</button></div>
       <p class="hint">Stick a label on each box. Scanning it with the phone camera opens that box.</p></section>
+    <section><div class="bh"><h2>Scanning</h2></div>${enginesSection()}</section>
     <section><div class="bh"><h2>Insurance and export</h2></div>${exportSection()}</section>
     <section><div class="bh"><h2>App</h2></div>${appSection()}${voiceSection()}</section>
     <section><div class="bh"><h2>Offline</h2></div><div id="offsec"></div></section>
     <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}
     ${S.auth?.auth ? "" : `<p class="hint">Sign-in is turned off on this server (AUTH=off).</p>`}`;
   backupPanel($("#bk"));
+  checkEngines();
   Offline.section().then((h) => { const x = $("#offsec"); if (x) x.innerHTML = h; });
   const so = $("#signout");
   if (so) so.onclick = async () => { await api("POST", "/api/auth/logout", {}).catch(() => {}); S.auth.loggedIn = false; showAuth(); };
