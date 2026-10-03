@@ -324,8 +324,9 @@ Also suggest a short 2-4 word name for the box and pick a category.
 # ---------- HTTP ----------
 
 STATIC = ROOT / "static"  # installable-app files: manifest, service worker, icons (no secrets, served without sign-in)
-STATIC_TYPES = {".webmanifest": "application/manifest+json", ".js": "text/javascript; charset=utf-8", ".png": "image/png"}
-PUBLIC = {"/", "/manifest.webmanifest", "/sw.js", "/api/auth/state", "/api/auth/login/options", "/api/auth/login/verify", "/api/auth/logout",
+STATIC_TYPES = {".webmanifest": "application/manifest+json", ".js": "text/javascript; charset=utf-8", ".png": "image/png",
+                ".ico": "image/x-icon"}
+PUBLIC = {"/", "/manifest.webmanifest", "/sw.js", "/favicon.ico", "/api/auth/state", "/api/auth/login/options", "/api/auth/login/verify", "/api/auth/logout",
           "/api/auth/register/options", "/api/auth/register/verify"}  # register/* check permission themselves
 
 
@@ -594,7 +595,7 @@ class H(BaseHTTPRequestHandler):
         cmd = self.command
         if p == "/" and cmd == "GET":
             return self.send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
-        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|icons/[\w-]+\.png)", p)
+        m = re.fullmatch(r"/(manifest\.webmanifest|sw\.js|favicon\.ico|icons/[\w-]+\.png)", p)
         if m and cmd == "GET":
             f = STATIC / m.group(1)
             if not f.is_file():
