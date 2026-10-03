@@ -1008,7 +1008,7 @@ function thingPic(t, cls = "thumb56") {
 }
 function whereText(t) {
   if (t.kind === "group") {
-    const parts = Object.entries(t.counts || {}).map(([k, n]) => `${placeShort(S.boxes.get(k))} ${n}`);
+    const parts = Object.entries(t.counts || {}).map(([k, n]) => `${esc(placeShort(S.boxes.get(k)))} ${Number(n) || 0}`);
     const u = unaccounted(t);
     return (parts.join(" · ") || "Not counted anywhere yet") + (u ? ` · <span class="away">${u} unaccounted</span>` : "");
   }
