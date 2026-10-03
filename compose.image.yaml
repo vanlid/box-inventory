@@ -1,5 +1,5 @@
 # Run Box Inventory from the published image: no source code or build needed.
-#   1. Put this file (as docker-compose.yml) and a .env file in an empty folder.
+#   1. Put this file (as compose.yaml) and a .env file in an empty folder.
 #   2. docker compose up -d        (update later: docker compose pull && docker compose up -d)
 services:
   box-inventory:

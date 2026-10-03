@@ -1,0 +1,40 @@
+# Optional: give Box Inventory its own HTTPS address on your tailnet, e.g.
+# https://box-inventory.<your-tailnet>.ts.net, so passkeys work without Tailscale on the host.
+# The address belongs to this container, not the computer: move to a new machine, restore a
+# backup, and your passkeys keep working.
+#
+# Turn it on with one line in .env (use ; instead of : between the files on Windows):
+#   COMPOSE_FILE=compose.yaml:compose.tailscale.yaml
+#   TS_AUTHKEY=tskey-auth-...        (Tailscale admin console → Settings → Keys)
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    environment:
+      TS_HOSTNAME: ${TS_HOSTNAME:-box-inventory}  # the device name, and the start of the https address
+      TS_AUTHKEY: ${TS_AUTHKEY:?Set TS_AUTHKEY in .env (Tailscale admin console → Settings → Keys)}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"  # no extra device access or privileges needed
+    configs:
+      - source: ts-serve
+        target: /config/serve.json
+    volumes:
+      - ./tailscale:/var/lib/tailscale  # its login; keep it, it's not part of app backups
+    # Join the app's network (not the other way round): if Tailscale restarts or can't log in,
+    # the app and its LAN port keep working.
+    network_mode: service:box-inventory
+    depends_on:
+      box-inventory:
+        condition: service_started
+        restart: true
+    restart: unless-stopped
+
+configs:
+  ts-serve:
+    # HTTPS on 443 with a real certificate, proxied to the app. Not public: Funnel stays off.
+    content: |
+      {
+        "TCP": { "443": { "HTTPS": true } },
+        "Web": { "$${TS_CERT_DOMAIN}:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:8765" } } } },
+        "AllowFunnel": { "$${TS_CERT_DOMAIN}:443": false }
+      }

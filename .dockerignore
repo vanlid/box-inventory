@@ -2,3 +2,4 @@
 .claude-token
 data/
 __pycache__/
+tailscale/

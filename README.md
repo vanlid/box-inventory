@@ -38,18 +38,42 @@ Claude Code is built in, so you only need Docker.
 
 ```bash
 mkdir box-inventory && cd box-inventory
-curl -fsSL -o docker-compose.yml https://github.com/vanlid/box-inventory/releases/latest/download/docker-compose.yml
+curl -fsSL -o compose.yaml https://github.com/vanlid/box-inventory/releases/latest/download/compose.yaml
 curl -fsSL -o .env https://github.com/vanlid/box-inventory/releases/latest/download/env.example
 # edit .env: at least CLAUDE_CODE_OAUTH_TOKEN=...
 docker compose up -d
 docker compose logs | grep "setup code"     # the code for your first passkey
 ```
 
-- **Data:** your boxes, photos and passkeys live in `./data` next to `docker-compose.yml`.
+- **Data:** your boxes, photos and passkeys live in `./data` next to `compose.yaml`.
 - **Update:** `docker compose pull && docker compose up -d`.
 - **Stop:** `docker compose down` (data is kept).
 - **Start at boot:** make Docker start at boot (Docker Desktop: "Start when you sign in"). The container restarts by itself.
-- **HTTPS for passkeys:** on the host, run `tailscale serve --bg 8765`, as in "Sign-in with passkeys" below.
+- **HTTPS for passkeys:** either run `tailscale serve --bg 8765` on the host (see "Sign-in with passkeys"),
+  or use the built-in Tailscale add-on below.
+
+#### Optional: Tailscale inside Docker
+
+Gives the app its own device and HTTPS address on your tailnet, such as
+`https://box-inventory.tail1234.ts.net`, without installing Tailscale on the computer. The address
+belongs to the container, so you can move to another machine, restore a backup, and your passkeys
+keep working.
+
+1. In the Tailscale admin console: turn on **MagicDNS** and **HTTPS certificates** (DNS page), and
+   create an auth key (**Settings → Keys → Generate auth key**).
+2. Download the add-on next to `compose.yaml`:
+   `curl -fsSL -O https://github.com/vanlid/box-inventory/releases/latest/download/compose.tailscale.yaml`
+3. Add to `.env` (on Windows, use `;` instead of `:`):
+   ```
+   COMPOSE_FILE=compose.yaml:compose.tailscale.yaml
+   TS_AUTHKEY=tskey-auth-...
+   ```
+4. `docker compose up -d`, then open `https://box-inventory.<your-tailnet>.ts.net` on your phone.
+5. In the admin console, find the new **box-inventory** device and choose **Disable key expiry**,
+   so it doesn't drop off your tailnet after 180 days.
+
+Tailscale keeps its login in `./tailscale`. If Tailscale has a problem, the app keeps working on
+your LAN port. Use `TS_HOSTNAME` in `.env` for a different device name.
 
 ### What goes in `.env`
 
