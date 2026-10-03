@@ -1,0 +1,4 @@
+.env
+.claude-token
+data/
+__pycache__/

@@ -1,0 +1,5 @@
+.claude-token
+.env
+data/
+__pycache__/
+.envrc

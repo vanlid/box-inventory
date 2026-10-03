@@ -1,0 +1,20 @@
+services:
+  box-inventory:
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
+    ports:
+      - "${PORT:-8765}:8765"
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?Set CLAUDE_CODE_OAUTH_TOKEN in .env or your shell}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-sonnet}
+      AUTH: ${AUTH:-on}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_TENANT: ${MS_TENANT:-consumers}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

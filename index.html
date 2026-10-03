@@ -1,0 +1,943 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Box Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+[hidden]{display:none!important} body{margin:0} img{max-width:100%}
+/* Layout: phone-first single column. Box list <-> box detail. Each box wears a yellow warehouse-tape number label. */
+:root {
+  --bg: #EDEFEA; --surface: #FFFFFF; --ink: #16181B; --muted: #5C635D; --line: #D2D6CE;
+  --tape: #F5C518; --tape-ink: #1A1600; --accent: #1F5FBF; --danger: #B3261E; --ok: #2E7D4F;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121416; --surface: #1C1F22; --ink: #ECEEE9; --muted: #9AA19A; --line: #30353A;
+  --tape: #E8BA12; --tape-ink: #1A1600; --accent: #86B4FF; --danger: #FF8A80; --ok: #7BD39C; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121416; --surface: #1C1F22; --ink: #ECEEE9; --muted: #9AA19A; --line: #30353A;
+  --tape: #E8BA12; --tape-ink: #1A1600; --accent: #86B4FF; --danger: #FF8A80; --ok: #7BD39C; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+.wrap { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 64px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top { display: grid; gap: 14px; margin-bottom: 18px; }
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font: 800 clamp(26px, 6vw, 36px)/1 var(--display); font-stretch: 75%; letter-spacing: .01em; margin: 0; text-transform: uppercase; }
+.counts { font: 500 12px/1.4 var(--mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.searchrow { display: flex; gap: 10px; }
+.search { flex: 1; min-width: 0; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+.search:focus { border-color: var(--ink); outline: none; }
+.btn { border: 1.5px solid var(--ink); background: var(--ink); color: var(--bg); border-radius: 10px; padding: 10px 14px; font-weight: 700; white-space: nowrap; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.tape { background: var(--tape); color: var(--tape-ink); border-color: var(--tape); }
+.btn:disabled { opacity: .5; cursor: default; }
+.notice { padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: 10px; color: var(--muted); }
+
+/* Tape label: the box number */
+.tag { display: inline-grid; place-items: center; min-width: 58px; padding: 6px 10px 4px; background: var(--tape); color: var(--tape-ink);
+  font: 900 30px/1 var(--display); font-stretch: 62%; letter-spacing: .02em; font-variant-numeric: tabular-nums; border-radius: 3px;
+  box-shadow: inset 0 0 0 2px rgba(0,0,0,.08); }
+.tag small { font: 500 9px/1 var(--mono); letter-spacing: .12em; display: block; margin-bottom: 2px; }
+.tag.big { min-width: 84px; font-size: 48px; padding: 8px 14px 6px; }
+
+/* Box list */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.card { display: grid; grid-template-columns: auto 1fr; gap: 12px; text-align: left; padding: 12px; background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: 12px; min-width: 0; }
+.card:hover { border-color: var(--ink); }
+.card .meta { min-width: 0; display: grid; gap: 2px; align-content: start; }
+.card .name { font-weight: 700; overflow-wrap: anywhere; }
+.card .sub { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.card .peek { font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.card .thumb { grid-column: 1 / -1; width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; background: var(--bg); max-width: 100%; }
+.unnamed { color: var(--muted); font-style: italic; font-weight: 500; }
+
+.empty { display: grid; gap: 14px; padding: 28px 20px; background: var(--surface); border: 1.5px dashed var(--line); border-radius: 14px; }
+.empty h2 { margin: 0; font: 800 22px/1.2 var(--display); font-stretch: 80%; }
+.empty ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+
+/* Search results */
+.results { display: grid; gap: 10px; }
+.hit { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; text-align: left; padding: 12px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; }
+.hit:hover { border-color: var(--ink); }
+.hit .meta { min-width: 0; display: grid; gap: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 13px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.chip mark { background: var(--tape); color: var(--tape-ink); border-radius: 2px; }
+
+/* Detail */
+.back { background: none; border: none; padding: 6px 0; color: var(--muted); font: 500 13px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.dhead { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; margin: 8px 0 18px; }
+.fields { display: grid; gap: 8px; min-width: 0; }
+.field { display: grid; gap: 2px; }
+.field label { font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.field input { width: 100%; min-width: 0; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); }
+.field input.title { font: 800 22px/1.2 var(--display); font-stretch: 85%; }
+.field input:focus { border-color: var(--ink); outline: none; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 520px) { .two { grid-template-columns: 1fr; } .dhead { grid-template-columns: 1fr; } }
+
+section.block { display: grid; gap: 10px; margin-top: 18px; }
+.bh { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.bh h2 { margin: 0; font: 800 15px var(--display); letter-spacing: .08em; text-transform: uppercase; }
+.photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.ph { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--surface); border: 1.5px solid var(--line); }
+.ph img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.ph .x { position: absolute; top: 4px; right: 4px; border: none; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 3px 7px; }
+.ph .x.armed { background: var(--danger); }
+.addph { display: grid; place-items: center; text-align: center; aspect-ratio: 1; border: 1.5px dashed var(--ink); border-radius: 8px; padding: 8px;
+  font-weight: 700; cursor: pointer; background: var(--surface); }
+.addph span { display: block; font: 400 12px var(--body); color: var(--muted); }
+.addph input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.addph:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#status { min-height: 0; }
+.st { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--line); }
+.st.err { border-color: var(--danger); color: var(--danger); }
+.st.ok { border-color: var(--ok); }
+.st .msg { flex: 1; min-width: 0; }
+.spin { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: sp 0.8s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.linkbtn { background: none; border: none; padding: 0; color: var(--accent); font-weight: 700; text-decoration: underline; }
+
+.items { list-style: none; margin: 0; padding: 0; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.items li { display: grid; grid-template-columns: 56px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-top: 1px solid var(--line); }
+.items li:first-child { border-top: none; }
+.items li.fresh { background: color-mix(in srgb, var(--tape) 18%, transparent); }
+.items input { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 6px; width: 100%; min-width: 0; }
+.items input:hover, .items input:focus { border-color: var(--line); outline: none; background: var(--bg); }
+.items .qty { text-align: right; font: 500 14px var(--mono); font-variant-numeric: tabular-nums; }
+.items .nm { display: grid; min-width: 0; }
+.items .note { font-size: 12px; color: var(--muted); padding: 0 7px 2px; overflow-wrap: anywhere; }
+.items .del { border: none; background: none; color: var(--muted); padding: 6px 8px; font-size: 16px; }
+.items .del:hover { color: var(--danger); }
+.items .none { display: block; color: var(--muted); padding: 14px; }
+.additem { display: flex; gap: 8px; }
+.additem input { flex: 1; min-width: 0; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+.foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 26px; padding-top: 16px; border-top: 1.5px solid var(--line); }
+.danger { color: var(--danger); border-color: var(--danger) !important; background: transparent !important; }
+.danger.armed { background: var(--danger) !important; color: var(--surface) !important; }
+.hint { font-size: 13px; color: var(--muted); }
+
+.items li { grid-template-columns: 44px 56px 1fr auto; }
+.items .spot { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; border: none; padding: 0; background: var(--bg); cursor: zoom-in; }
+.items .spot canvas { width: 100%; height: 100%; display: block; }
+
+/* Room filter chips */
+.roomrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.rchip { border: 1.5px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 12px; font-size: 14px; font-weight: 600; }
+.rchip .n { font: 500 12px var(--mono); color: var(--muted); margin-left: 4px; }
+.rchip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.rchip[aria-pressed="true"] .n { color: inherit; opacity: .7; }
+.rchip.add { border-style: dashed; color: var(--muted); }
+.rchip-input { border: 1.5px solid var(--ink); border-radius: 999px; padding: 5px 12px; width: 150px; background: var(--surface); }
+.group { display: grid; gap: 10px; margin-bottom: 22px; }
+.group h2 { margin: 0; font: 800 14px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; gap: 8px; align-items: baseline; }
+.group h2 .n { font: 500 12px var(--mono); }
+.iconbtn { border: 1.5px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 10px; font-weight: 700; }
+
+/* Search finds: cropped photo spots */
+.finds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.find { display: grid; gap: 4px; text-align: left; padding: 0; border: none; background: none; min-width: 0; cursor: zoom-in; }
+.find canvas { width: 100%; aspect-ratio: 4 / 3; border-radius: 8px; background: var(--bg); display: block; border: 1.5px solid var(--line); }
+.find .cap { font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
+.find .cap small { color: var(--muted); display: block; }
+.hit { grid-template-columns: auto 1fr; }
+button.tag { border: none; cursor: pointer; }
+
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: grid; place-items: center; padding: 16px; z-index: 10; cursor: zoom-out; }
+.lb { position: relative; display: inline-block; max-width: 100%; overflow: hidden; border-radius: 6px; line-height: 0; }
+.lb img { max-height: 86vh; max-width: 100%; display: block; }
+.lb .hl { position: absolute; border: 3px solid var(--tape); border-radius: 4px; box-shadow: 0 0 0 9999px rgba(0,0,0,.5); }
+.lbcap { color: #fff; margin-top: 10px; text-align: center; font-weight: 600; line-height: 1.4; }
+
+/* Sign-in + settings */
+.authcard { display: grid; gap: 14px; max-width: 460px; margin: 6vh auto 0; padding: 24px 20px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; }
+.authcard h2 { margin: 0; font: 800 24px/1.2 var(--display); font-stretch: 80%; }
+.authcard p { margin: 0; }
+.authcard .btn { justify-self: start; }
+.err { color: var(--danger); }
+.panel { display: grid; gap: 22px; }
+.panel section { display: grid; gap: 10px; }
+.rows { list-style: none; margin: 0; padding: 0; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); }
+.rows li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line); }
+.rows li:first-child { border-top: none; }
+.rows input { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 6px; min-width: 0; width: 100%; font-weight: 600; }
+.rows input:hover, .rows input:focus { border-color: var(--line); outline: none; background: var(--bg); }
+.rows .sub { font-size: 12px; color: var(--muted); padding: 0 7px; }
+.pill { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; background: var(--tape); color: var(--tape-ink); border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+.banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--tape); margin-bottom: 14px; }
+.banner .msg { flex: 1; min-width: 0; }
+.codebox { display: grid; gap: 8px; padding: 14px; border: 1.5px dashed var(--ink); border-radius: 10px; background: var(--bg); }
+.codebox .code { font: 600 30px/1.1 var(--mono); letter-spacing: .14em; user-select: all; overflow-wrap: anywhere; }
+.okmsg { color: var(--ok); }
+#bk { display: grid; gap: 10px; }
+#bk p { margin: 0; }
+#bk .err:empty { display: none; }
+.btnrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; }
+</style>
+</head><body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Box Inventory</h1>
+      <span style="display:flex;gap:10px;align-items:center">
+        <span class="counts" id="counts"></span>
+        <button class="iconbtn" id="gear" hidden aria-label="Settings">Settings</button>
+      </span>
+    </div>
+    <div class="searchrow" id="searchrow" hidden>
+      <input id="q" class="search" type="search" placeholder="Find anything… e.g. HDMI, krill, insurance" autocomplete="off" aria-label="Search all boxes">
+      <button id="newbox" class="btn tape">+ New box</button>
+    </div>
+    <div class="roomrow" id="roomrow" hidden></div>
+  </header>
+
+  <div id="banner"></div>
+
+  <main id="authview" hidden></main>
+
+  <main id="listview" hidden>
+    <div id="list"><p class="notice">Loading your boxes…</p></div>
+  </main>
+
+  <main id="detail" hidden>
+    <button class="back" data-back>← All boxes</button>
+    <div id="d-head"></div>
+    <section class="block">
+      <div class="bh"><h2>Photos</h2><span class="hint">New photos are scanned automatically</span></div>
+      <div id="d-photos"></div>
+    </section>
+    <div id="status"></div>
+    <section class="block">
+      <div class="bh"><h2 id="items-h">Contents</h2><button class="btn ghost" id="rescan" hidden>Re-scan all photos</button></div>
+      <div id="d-items"></div>
+      <form class="additem" id="additem">
+        <input id="newitem" placeholder="Add an item by hand…" autocomplete="off" aria-label="New item name">
+        <button class="btn ghost" type="submit">Add</button>
+      </form>
+    </section>
+    <div class="foot">
+      <span class="hint" id="updated"></span>
+      <button class="btn ghost danger" id="delbox">Delete box</button>
+    </div>
+  </main>
+
+  <main id="settings" hidden>
+    <button class="back" data-back>← All boxes</button>
+    <div class="panel" id="s-body"></div>
+  </main>
+</div>
+<datalist id="cats">
+  <option>Tech & cables</option><option>Documents</option><option>Food & supplements</option><option>Cleaning & tools</option>
+  <option>Health & personal care</option><option>Office supplies</option><option>Clothes & outdoor</option><option>Kitchen</option>
+  <option>Hobby</option><option>Mixed / not sure</option>
+</datalist>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (n) => String(n).padStart(2, "0");
+const uid = () => Math.random().toString(36).slice(2, 10);
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+const S = { auth: null, boxes: new Map(), rooms: [], loaded: false, view: "list", open: null, busy: false, undo: null,
+  fresh: new Set(), pending: false, room: store.get("room") || "all", addingRoom: false };
+
+/* ---------- server calls ---------- */
+async function api(method, path, body, type = "application/json") {
+  const r = await fetch(path, { method, credentials: "same-origin", headers: body ? { "Content-Type": type } : {},
+    body: body && type === "application/json" ? JSON.stringify(body) : body });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.signIn) { showAuth(); throw new Error(data.error || "Sign in first."); }
+  if (!r.ok) throw new Error(data.error || "The server didn't respond. Is the computer running it on?");
+  return data;
+}
+const keep = (box) => { S.boxes.set(String(box.number), box); render(); return box; };
+async function patch(id, data) {
+  try { return keep(await api("PATCH", "/api/boxes/" + id, data)); }
+  catch (e) { setStatus("err", e.message); }
+}
+async function load() {
+  try {
+    const db = await api("GET", "/api/boxes");
+    S.boxes = new Map(Object.entries(db.boxes)); S.rooms = db.rooms || []; S.loaded = true;
+    if (S.room !== "all" && S.room !== "none" && !S.rooms.some((r) => r.id === S.room)) S.room = "all";
+    render();
+  } catch (e) { if (S.view !== "auth") $("#list").innerHTML = `<p class="notice">${esc(e.message)}</p>`; }
+}
+
+/* ---------- views ---------- */
+function show(view) {
+  S.view = view;
+  const app = view !== "auth";
+  $("#authview").hidden = view !== "auth";
+  $("#listview").hidden = view !== "list";
+  $("#detail").hidden = view !== "detail";
+  $("#settings").hidden = view !== "settings";
+  $("#searchrow").hidden = $("#roomrow").hidden = view !== "list";
+  $("#gear").hidden = !app || view === "settings";
+  $("#counts").hidden = !app;
+  if (view !== "detail") S.open = null;
+  disarm();
+  window.scrollTo(0, 0);
+}
+
+async function boot() {
+  try { S.auth = await (await fetch("/api/auth/state", { credentials: "same-origin" })).json(); }
+  catch { S.auth = { auth: false, loggedIn: false }; }
+  if (S.auth.auth && !S.auth.loggedIn) return showAuth();
+  show("list"); load();
+}
+boot();
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !S.busy && S.view !== "auth") load(); });
+
+/* ---------- passkeys ---------- */
+const b64e = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64d = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const canPasskey = () => window.isSecureContext && !!window.PublicKeyCredential;
+function deviceName() {
+  const ua = navigator.userAgent;
+  return /Android/.test(ua) ? "Android phone" : /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad"
+    : /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows PC" : /Linux/.test(ua) ? "Linux computer" : "Passkey";
+}
+function passkeyError(e) {
+  if (e?.name === "NotAllowedError") return "Cancelled, or the passkey prompt timed out. Try again.";
+  if (e?.name === "InvalidStateError") return "This device already has a passkey for Box Inventory. Use Sign in instead.";
+  if (e?.name === "SecurityError") return "Passkeys don't work on this address. Open the app at its secure https address.";
+  return e?.message || "Something went wrong with the passkey.";
+}
+
+async function createPasskey(setupCode, name) {
+  const o = await api("POST", "/api/auth/register/options", { setupCode });
+  const cred = await navigator.credentials.create({ publicKey: { ...o, challenge: b64d(o.challenge),
+    user: { ...o.user, id: b64d(o.user.id) }, excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: b64d(c.id) })) } });
+  await api("POST", "/api/auth/register/verify", { setupCode, name, credential: { id: cred.id, rawId: b64e(cred.rawId), type: cred.type,
+    response: { clientDataJSON: b64e(cred.response.clientDataJSON), attestationObject: b64e(cred.response.attestationObject) } } });
+}
+async function signIn() {
+  const o = await api("POST", "/api/auth/login/options", {});
+  const cred = await navigator.credentials.get({ publicKey: { ...o, challenge: b64d(o.challenge) } });
+  const r = cred.response;
+  await api("POST", "/api/auth/login/verify", { credential: { id: cred.id, rawId: b64e(cred.rawId), type: cred.type,
+    response: { clientDataJSON: b64e(r.clientDataJSON), authenticatorData: b64e(r.authenticatorData), signature: b64e(r.signature),
+      userHandle: r.userHandle ? b64e(r.userHandle) : null } } });
+  return cred.authenticatorAttachment;  // "cross-platform" = used another device, e.g. a phone via QR code
+}
+
+function showAuth(msg = "", ok = false) {
+  show("auth");
+  const a = S.auth || {};
+  const el = $("#authview");
+  if (!canPasskey()) {
+    el.innerHTML = `<div class="authcard"><h2>Open the secure address</h2>
+      <p>Passkeys only work over HTTPS.${a.origin ? "" : " Set up HTTPS with Tailscale first (see the README)."}</p>
+      ${a.origin ? `<p>Open <a href="${esc(a.origin)}">${esc(a.origin)}</a></p>` : ""}</div>`;
+    return;
+  }
+  if (a.origin && a.origin !== location.origin) {
+    el.innerHTML = `<div class="authcard"><h2>Wrong address</h2><p>Your passkeys belong to <a href="${esc(a.origin)}">${esc(a.origin)}</a>. Open the app there.</p></div>`;
+    return;
+  }
+  if (!a.hasPasskeys) {
+    el.innerHTML = `<form class="authcard" id="setupform">
+      <h2>Set up Box Inventory</h2>
+      <p>Create the first passkey. Your phone's fingerprint or screen lock becomes the key to your boxes.</p>
+      <div class="field"><label for="a-code">Setup code</label><input id="a-code" inputmode="numeric" autocomplete="one-time-code" placeholder="1234-5678" required></div>
+      <p class="hint">It's in <b>data/setup-code.txt</b> on the computer running the app, and in its log.</p>
+      <div class="field"><label for="a-name">Name for this passkey</label><input id="a-name" value="${esc(deviceName())}"></div>
+      <button class="btn tape" type="submit">Create passkey</button>
+      <p class="${ok ? "okmsg" : "err"}" id="a-err">${esc(msg)}</p>
+      <button type="button" class="linkbtn" id="restorelink">Restoring from a backup instead?</button></form>`;
+    $("#restorelink").onclick = () => showRestore($("#a-code").value);
+    $("#setupform").onsubmit = async (e) => {
+      e.preventDefault(); $("#a-err").textContent = "";
+      try { await createPasskey($("#a-code").value, $("#a-name").value); S.auth.loggedIn = true; S.auth.hasPasskeys = true; S.auth.origin = location.origin; show("list"); load(); }
+      catch (err) { $("#a-err").textContent = passkeyError(err); }
+    };
+    return;
+  }
+  el.innerHTML = `<div class="authcard">
+    <h2>Sign in</h2>
+    <p>Use your passkey: fingerprint, face or screen lock.</p>
+    <button class="btn tape" id="signin">Sign in with passkey</button>
+    <p class="hint"><b>New device?</b> Choose “Use a phone or tablet” (or “Use another device”) and scan the QR code with the phone that has your passkey. Afterwards you can add a passkey for this device.</p>
+    <p class="${ok ? "okmsg" : "err"}" id="a-err">${esc(msg)}</p></div>`;
+  $("#signin").onclick = async () => {
+    $("#a-err").textContent = "";
+    try {
+      const via = await signIn();
+      S.auth.loggedIn = true; show("list"); load();
+      if (via === "cross-platform" && !store.get("skipLocalKey")) offerLocalPasskey();
+    } catch (err) { $("#a-err").textContent = passkeyError(err); }
+  };
+}
+
+function offerLocalPasskey() {
+  $("#banner").innerHTML = `<div class="banner"><span class="msg">Signed in with another device. Create a passkey on this one so you don't need your phone next time?</span>
+    <button class="btn tape" data-localkey>Create passkey</button><button class="linkbtn" data-nokey>Not now</button></div>`;
+}
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("[data-nokey]")) { store.set("skipLocalKey", "1"); $("#banner").innerHTML = ""; }
+  if (e.target.closest("[data-localkey]")) {
+    try { await createPasskey("", deviceName()); $("#banner").innerHTML = `<div class="banner"><span class="msg">Passkey created. This device can sign in on its own now.</span></div>`; if (S.view === "settings") renderSettings(); }
+    catch (err) { $("#banner").innerHTML = `<div class="banner"><span class="msg err">${esc(passkeyError(err))}</span><button class="linkbtn" data-nokey>Close</button></div>`; }
+  }
+});
+
+/* ---------- rendering ---------- */
+const roomName = (id) => S.rooms.find((r) => r.id === id)?.name || "";
+function render() {
+  if (S.view === "auth") return;
+  const boxes = [...S.boxes.values()];
+  const items = boxes.reduce((a, b) => a + (b.items || []).reduce((s, i) => s + (Number(i.qty) || 1), 0), 0);
+  $("#counts").textContent = S.loaded ? `${boxes.length} box${boxes.length === 1 ? "" : "es"} · ${items} item${items === 1 ? "" : "s"}` : "";
+  renderRooms(); renderList();
+  if (S.view === "detail") {
+    const a = document.activeElement;
+    if (a && $("#detail").contains(a) && a.matches("input:not([type=file]), select")) { S.pending = true; return; }
+    renderDetail();
+  }
+}
+$("#detail").addEventListener("focusout", () => setTimeout(() => {
+  const a = document.activeElement;
+  if (S.pending && !(a && $("#detail").contains(a) && a.matches("input:not([type=file]), select"))) { S.pending = false; renderDetail(); }
+}, 0));
+
+function sorted() { return [...S.boxes.values()].sort((a, b) => a.number - b.number); }
+const photoSrc = (b, name) => `/photos/${b.number}/${name}`;
+
+function renderRooms() {
+  if (!S.loaded) return;
+  const all = sorted(); const count = (id) => all.filter((b) => (b.room || "") === id).length;
+  const chip = (id, label, n) => `<button class="rchip" data-room="${esc(id)}" aria-pressed="${S.room === id}">${esc(label)}<span class="n">${n}</span></button>`;
+  $("#roomrow").innerHTML = (S.rooms.length ? chip("all", "All rooms", all.length) + S.rooms.map((r) => chip(r.id, r.name, count(r.id))).join("")
+      + (count("") ? chip("none", "No room", count("")) : "") : "")
+    + (S.addingRoom ? `<input class="rchip-input" id="newroom" placeholder="Room name" aria-label="New room name">`
+      : `<button class="rchip add" data-addroom>+ Room</button>`);
+  if (S.addingRoom) $("#newroom").focus();
+}
+function setRoom(id) { S.room = id; store.set("room", id); render(); }
+async function addRoom(name) {
+  name = name.trim(); if (!name) return null;
+  const room = await api("POST", "/api/rooms", { name });
+  if (!S.rooms.some((r) => r.id === room.id)) S.rooms.push(room);
+  return room;
+}
+$("#roomrow").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-room]"); if (c) return setRoom(c.dataset.room);
+  if (e.target.closest("[data-addroom]")) { S.addingRoom = true; renderRooms(); }
+});
+$("#roomrow").addEventListener("keydown", async (e) => {
+  if (e.target.id !== "newroom") return;
+  if (e.key === "Escape") { S.addingRoom = false; renderRooms(); }
+  if (e.key === "Enter") { const v = e.target.value; S.addingRoom = false; try { const r = await addRoom(v); if (r) setRoom(r.id); else renderRooms(); } catch (err) { alert(err.message); } }
+});
+$("#roomrow").addEventListener("focusout", (e) => { if (e.target.id === "newroom" && S.addingRoom) { S.addingRoom = false; const v = e.target.value; addRoom(v).then((r) => r ? setRoom(r.id) : renderRooms()).catch(() => renderRooms()); } });
+
+function boxCard(b) {
+  const its = b.items || [];
+  const where = [b.category, b.location && "at " + b.location].filter(Boolean).join(" · ");
+  return `<button class="card" data-open="${b.number}">
+    <span class="tag"><small>BOX</small>${num(b.number)}</span>
+    <span class="meta">
+      <span class="name">${b.name ? esc(b.name) : '<span class="unnamed">Unnamed box</span>'}</span>
+      <span class="sub">${esc(where) || "No category or place yet"}</span>
+      <span class="peek">${its.length ? esc(its.slice(0, 6).map((i) => i.name).join(", ")) + (its.length > 6 ? ` +${its.length - 6} more` : "") : '<span class="unnamed">Empty list</span>'}</span>
+    </span>
+    ${b.photos?.length ? `<img class="thumb" src="${photoSrc(b, b.photos[0])}" alt="" loading="lazy">` : ""}
+  </button>`;
+}
+function renderList() {
+  const el = $("#list");
+  if (!S.loaded) return;
+  const q = $("#q").value.trim().toLowerCase();
+  if (q) return renderSearch(q);
+  let boxes = sorted();
+  if (!boxes.length) {
+    el.innerHTML = `<div class="empty">
+      <h2>No boxes yet</h2>
+      <ol>
+        <li>Optional: add your rooms with <b>+ Room</b> (Kitchen, Bedroom, Storage…).</li>
+        <li>Write a number on a box (1, 2, 3…) and tap <b>+ New box</b>.</li>
+        <li>Take a photo or two of what's inside. Claude lists the items and remembers where each one is in the photo.</li>
+        <li>Later, search for anything and see exactly which box, and where in it.</li>
+      </ol>
+      <div><button class="btn tape" data-act="new">+ Add box 01</button></div>
+    </div>`;
+    return;
+  }
+  if (S.room !== "all") boxes = boxes.filter((b) => (b.room || "") === (S.room === "none" ? "" : S.room));
+  if (!boxes.length) { el.innerHTML = `<p class="notice">No boxes in this room yet. Tap <b>+ New box</b> to add one here.</p>`; return; }
+  if (S.room === "all" && S.rooms.length) {
+    const groups = [...S.rooms.map((r) => [r.name, boxes.filter((b) => b.room === r.id)]), ["No room", boxes.filter((b) => !roomName(b.room))]].filter(([, bs]) => bs.length);
+    el.innerHTML = groups.map(([name, bs]) => `<section class="group"><h2>${esc(name)}<span class="n">${bs.length}</span></h2><div class="grid">${bs.map(boxCard).join("")}</div></section>`).join("");
+    return;
+  }
+  el.innerHTML = `<div class="grid">${boxes.map(boxCard).join("")}</div>`;
+}
+
+function hl(text, terms) {
+  let out = esc(text);
+  for (const t of terms) if (t) out = out.replace(new RegExp("(" + esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig"), "<mark>$1</mark>");
+  return out;
+}
+function renderSearch(q) {
+  const terms = q.split(/\s+/).filter(Boolean);
+  const hits = [];
+  for (const b of sorted()) {
+    const meta = [b.name, b.category, b.location, roomName(b.room), "box " + b.number, "box " + num(b.number)].join(" ").toLowerCase();
+    const metaAll = terms.every((t) => meta.includes(t));
+    const its = (b.items || []).filter((i) => {
+      const own = (i.name + " " + (i.note || "")).toLowerCase();
+      return terms.every((t) => (own + " " + meta).includes(t)) && terms.some((t) => own.includes(t));
+    });
+    if (metaAll || its.length) hits.push({ b, its });
+  }
+  if (!hits.length) { $("#list").innerHTML = `<p class="notice">Nothing matches “${esc(q)}”. Try a shorter word, like “cable” instead of “cables”.</p>`; return; }
+  $("#list").innerHTML = `<div class="results">${hits.map(({ b, its }) => {
+    const spots = its.filter((i) => i.loc), plain = its.filter((i) => !i.loc);
+    const where = [roomName(b.room), b.location && "at " + b.location].filter(Boolean).map((s) => hl(s, terms)).join(" · ");
+    return `<div class="hit">
+      <button class="tag" data-open="${b.number}" aria-label="Open box ${num(b.number)}"><small>BOX</small>${num(b.number)}</button>
+      <span class="meta">
+        <button class="linkbtn" style="color:inherit;text-decoration:none;text-align:left" data-open="${b.number}"><b>${b.name ? hl(b.name, terms) : "Box " + num(b.number)}</b>${where ? ` <span class="hint">· ${where}</span>` : ""}</button>
+        ${spots.length ? `<span class="finds">${spots.slice(0, 8).map((i) => `<button class="find" data-spot="${b.number}|${esc(i.id)}">
+            <canvas data-crop="${b.number}|${esc(i.id)}" aria-label="${esc(i.name)} in the photo"></canvas>
+            <span class="cap">${(i.qty || 1) > 1 ? i.qty + "× " : ""}${hl(i.name, terms)}${i.note ? `<small>${hl(i.note, terms)}</small>` : ""}</span></button>`).join("")}</span>` : ""}
+        ${plain.length ? `<span class="chips">${plain.slice(0, 12).map((i) => `<span class="chip">${(i.qty || 1) > 1 ? i.qty + "× " : ""}${hl(i.name, terms)}</span>`).join("")}</span>` : ""}
+      </span>
+    </div>`;
+  }).join("")}</div>`;
+  drawCrops($("#list"));
+}
+
+/* ---------- photo crops: show where an item is, like a highlighted flyer clipping ---------- */
+const imgCache = new Map();
+function loadImg(src) {
+  if (!imgCache.has(src)) imgCache.set(src, new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }));
+  return imgCache.get(src);
+}
+function findItem(ref) { const [n, id] = ref.split("|"); const b = S.boxes.get(n); return b && { b, it: (b.items || []).find((i) => i.id === id) }; }
+function drawCrops(root) {
+  const tape = getComputedStyle(document.documentElement).getPropertyValue("--tape").trim() || "#F5C518";
+  root.querySelectorAll("canvas[data-crop]").forEach(async (cv) => {
+    const f = findItem(cv.dataset.crop); if (!f?.it?.loc) return;
+    let img; try { img = await loadImg(photoSrc(f.b, f.it.loc.photo)); } catch { return; }
+    const W = img.naturalWidth, Hh = img.naturalHeight, [l, t, r, bt] = f.it.loc.box;
+    const x1 = l / 1000 * W, y1 = t / 1000 * Hh, x2 = r / 1000 * W, y2 = bt / 1000 * Hh;
+    const cw = cv.clientWidth || 44, ch = cv.clientHeight || 44, aspect = cw / ch;
+    // Region: the item plus some context, shaped to the canvas, kept inside the photo.
+    let w = (x2 - x1) * 1.5 + 24, h = (y2 - y1) * 1.5 + 24;
+    if (w / h > aspect) h = w / aspect; else w = h * aspect;
+    w = Math.min(w, W); h = Math.min(h, Hh);
+    const sx = Math.max(0, Math.min(W - w, (x1 + x2) / 2 - w / 2)), sy = Math.max(0, Math.min(Hh - h, (y1 + y2) / 2 - h / 2));
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    const g = cv.getContext("2d"), k = cv.width / w;
+    g.drawImage(img, sx, sy, w, h, 0, 0, cv.width, cv.height);
+    const bx = (x1 - sx) * k, by = (y1 - sy) * k, bw = (x2 - x1) * k, bh = (y2 - y1) * k;
+    g.fillStyle = "rgba(0,0,0,.35)"; g.beginPath(); g.rect(0, 0, cv.width, cv.height); g.rect(bx, by, bw, bh); g.fill("evenodd");
+    g.strokeStyle = tape; g.lineWidth = Math.max(2, 2.5 * dpr); g.strokeRect(bx, by, bw, bh);
+  });
+}
+function lightbox(src, box, caption) {
+  const lb = document.createElement("div"); lb.className = "lightbox";
+  lb.innerHTML = `<div><div class="lb"><img src="${esc(src)}" alt="">${box ? `<div class="hl" style="left:${box[0] / 10}%;top:${box[1] / 10}%;width:${(box[2] - box[0]) / 10}%;height:${(box[3] - box[1]) / 10}%"></div>` : ""}</div>
+    ${caption ? `<div class="lbcap">${caption}</div>` : ""}</div>`;
+  lb.onclick = () => lb.remove();
+  document.addEventListener("keydown", function k(e) { if (e.key === "Escape") { lb.remove(); document.removeEventListener("keydown", k); } });
+  document.body.append(lb);
+}
+document.addEventListener("click", (e) => {
+  const s = e.target.closest("[data-spot]"); if (!s) return;
+  const f = findItem(s.dataset.spot); if (!f?.it?.loc) return;
+  lightbox(photoSrc(f.b, f.it.loc.photo), f.it.loc.box, `${esc(f.it.name)} · Box ${num(f.b.number)}${roomName(f.b.room) ? " · " + esc(roomName(f.b.room)) : ""}`);
+});
+
+function renderDetail() {
+  const b = S.boxes.get(S.open);
+  if (!b) { show("list"); render(); return; }
+  $("#d-head").innerHTML = `<div class="dhead">
+    <span class="tag big"><small>BOX</small>${num(b.number)}</span>
+    <div class="fields">
+      <div class="field"><label for="f-name">Name</label><input id="f-name" class="title" data-f="name" value="${esc(b.name)}" placeholder="e.g. Cables & chargers"></div>
+      <div class="two">
+        <div class="field"><label for="f-room">Room</label><select id="f-room" class="field-sel">
+          <option value="">No room</option>${S.rooms.map((r) => `<option value="${esc(r.id)}" ${r.id === b.room ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+          <option value="__new">+ New room…</option></select>
+          <input id="f-newroom" hidden placeholder="New room name, then Enter" style="margin-top:6px"></div>
+        <div class="field"><label for="f-loc">Spot in the room</label><input id="f-loc" data-f="location" value="${esc(b.location)}" placeholder="e.g. Closet, top shelf"></div>
+      </div>
+      <div class="field"><label for="f-cat">Category</label><input id="f-cat" list="cats" data-f="category" value="${esc(b.category)}" placeholder="Pick or type"></div>
+    </div></div>`;
+
+  const photos = b.photos || [];
+  $("#d-photos").innerHTML = `<div class="photos">
+    ${photos.map((p) => `<div class="ph"><img src="${photoSrc(b, p)}" alt="Photo of box ${num(b.number)}" data-zoom="${esc(p)}" loading="lazy">
+      <button class="x" data-rmph="${esc(p)}" aria-label="Remove photo">✕</button></div>`).join("")}
+    <label class="addph">
+      <input id="photoin" type="file" accept="image/*" multiple ${S.busy ? "disabled" : ""}>
+      <div>+ Add photos<span>Camera or gallery</span></div></label>
+  </div>`;
+
+  const items = b.items || [];
+  $("#items-h").textContent = `Contents${items.length ? " (" + items.length + ")" : ""}`;
+  $("#rescan").hidden = !photos.length;
+  $("#rescan").disabled = S.busy;
+  $("#d-items").innerHTML = `<ul class="items">${items.length ? items.map((i) => `
+    <li data-iid="${esc(i.id)}" class="${S.fresh.has(i.id) ? "fresh" : ""}">
+      ${i.loc ? `<button class="spot" data-spot="${b.number}|${esc(i.id)}" aria-label="Show ${esc(i.name)} in the photo"><canvas data-crop="${b.number}|${esc(i.id)}"></canvas></button>` : "<span></span>"}
+      <input class="qty" type="number" min="1" inputmode="numeric" value="${Number(i.qty) || 1}" data-if="qty" aria-label="Quantity">
+      <span class="nm"><input value="${esc(i.name)}" data-if="name" aria-label="Item name">${i.note ? `<span class="note">${esc(i.note)}</span>` : ""}</span>
+      <button class="del" data-delitem="${esc(i.id)}" aria-label="Remove ${esc(i.name)}">✕</button>
+    </li>`).join("") : `<li style="display:block"><span class="none">Nothing listed yet. Add a photo and Claude will list what's inside, or type items below.</span></li>`}</ul>`;
+  drawCrops($("#d-items"));
+  $("#updated").textContent = b.updatedAt ? "Updated " + new Date(b.updatedAt).toLocaleString() : "";
+}
+
+/* ---------- status line ---------- */
+function setStatus(kind, msg, extra = "") {
+  const el = $("#status");
+  if (!kind) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="st ${kind === "err" ? "err" : kind === "ok" ? "ok" : ""}">
+    ${kind === "busy" ? '<span class="spin" aria-hidden="true"></span>' : ""}
+    <span class="msg" role="status">${esc(msg)}</span>${extra}</div>`;
+}
+
+/* ---------- navigation ---------- */
+function openBox(id) {
+  S.fresh.clear(); S.undo = null; show("detail"); S.open = String(id);
+  if (!S.busy) setStatus(null);
+  renderDetail();
+}
+function backToList() { show("list"); render(); }
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-back]")) return backToList();
+  const o = e.target.closest("[data-open]"); if (o) return openBox(o.dataset.open);
+  if (e.target.closest('[data-act="new"]')) return newBox();
+});
+$("#gear").onclick = () => { show("settings"); renderSettings(); };
+
+async function newBox() {
+  $("#newbox").disabled = true;
+  try {
+    const room = S.room !== "all" && S.room !== "none" ? S.room : "";
+    const b = keep(await api("POST", "/api/boxes", { room })); $("#q").value = ""; openBox(b.number);
+  } catch (e) { $("#list").insertAdjacentHTML("afterbegin", `<p class="notice">${esc(e.message)}</p>`); }
+  finally { $("#newbox").disabled = false; }
+}
+$("#newbox").onclick = newBox;
+$("#q").addEventListener("input", renderList);
+
+/* ---------- detail edits ---------- */
+$("#detail").addEventListener("change", async (e) => {
+  const t = e.target; const b = S.boxes.get(S.open); if (!b) return;
+  if (t.id === "f-room") {
+    if (t.value === "__new") { $("#f-newroom").hidden = false; $("#f-newroom").focus(); return; }
+    return patch(S.open, { room: t.value });
+  }
+  if (t.id === "f-newroom") {
+    try { const r = await addRoom(t.value); if (r) await patch(S.open, { room: r.id }); else renderDetail(); }
+    catch (err) { setStatus("err", err.message); }
+    return;
+  }
+  if (t.dataset.f) { const v = t.value.trim(); if (v !== (b[t.dataset.f] || "")) patch(S.open, { [t.dataset.f]: v }); return; }
+  if (t.dataset.if) {
+    const iid = t.closest("li").dataset.iid;
+    const items = b.items.map((i) => i.id !== iid ? i : { ...i, [t.dataset.if]: t.dataset.if === "qty" ? Math.max(1, parseInt(t.value) || 1) : t.value.trim() || i.name });
+    patch(S.open, { items });
+    return;
+  }
+  if (t.id === "photoin" && t.files.length) { const f = [...t.files]; t.value = ""; addPhotos(f); }
+});
+$("#detail").addEventListener("keydown", (e) => { if (e.target.id === "f-newroom" && e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
+
+let armed = null, armTimer = 0;
+function arm(el, label) { disarm(); armed = el; el.dataset.label = el.textContent; el.textContent = label; el.classList.add("armed"); armTimer = setTimeout(disarm, 4000); }
+function disarm() { if (armed) { armed.classList.remove("armed"); armed.textContent = armed.dataset.label; } armed = null; clearTimeout(armTimer); }
+
+$("#detail").addEventListener("click", async (e) => {
+  const b = S.boxes.get(S.open); if (!b) return;
+  const z = e.target.closest("[data-zoom]");
+  if (z) return lightbox(photoSrc(b, z.dataset.zoom));
+  const di = e.target.closest("[data-delitem]");
+  if (di) { S.undo = { id: S.open, items: b.items }; await patch(S.open, { items: b.items.filter((i) => i.id !== di.dataset.delitem) });
+    setStatus("ok", "Item removed.", `<button class="linkbtn" data-undo>Undo</button>`); return; }
+  if (e.target.closest("[data-undo]")) { if (S.undo?.id === S.open) { await patch(S.open, { items: S.undo.items }); S.undo = null; setStatus("ok", "Restored."); } return; }
+  const rp = e.target.closest("[data-rmph]");
+  if (rp) {
+    if (armed !== rp) return arm(rp, "Remove?");
+    disarm();
+    try { keep(await api("DELETE", `/api/boxes/${S.open}/photos/${rp.dataset.rmph}`)); } catch (err) { setStatus("err", err.message); }
+  }
+});
+
+$("#additem").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const b = S.boxes.get(S.open); const v = $("#newitem").value.trim(); if (!b || !v) return;
+  patch(S.open, { items: [...b.items, { id: uid(), name: v, qty: 1 }] }); $("#newitem").value = "";
+});
+
+$("#delbox").onclick = async (e) => {
+  const btn = e.currentTarget; const b = S.boxes.get(S.open); if (!b) return;
+  if (armed !== btn) return arm(btn, `Tap again to delete box ${num(b.number)} and its photos`);
+  disarm();
+  try { await api("DELETE", "/api/boxes/" + S.open); S.boxes.delete(S.open); backToList(); }
+  catch (err) { setStatus("err", err.message); }
+};
+
+/* ---------- photos + scanning ---------- */
+async function shrink(file) {
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+    return await new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
+  } catch { return null; }
+}
+
+async function addPhotos(files) {
+  const id = S.open; if (!S.boxes.get(id) || S.busy) return;
+  S.busy = true; renderDetail();
+  const added = [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      setStatus("busy", `Uploading photo ${i + 1} of ${files.length}…`);
+      const jpg = await shrink(files[i]);
+      if (!jpg) { setStatus("err", `“${files[i].name}” couldn't be opened as a photo. Try a JPEG or PNG.`); return; }
+      try { const r = await api("PUT", `/api/boxes/${id}/photos`, jpg, "image/jpeg"); added.push(r.photo); keep(r.box); }
+      catch (e) { setStatus("err", e.message); return; }
+    }
+    await scan(id, added, "add");
+  } finally { S.busy = false; if (S.open === id) renderDetail(); }
+}
+
+$("#rescan").onclick = async () => {
+  const id = S.open; if (!S.boxes.get(id) || S.busy) return;
+  S.busy = true; renderDetail();
+  try { await scan(id, null, "replace"); } finally { S.busy = false; if (S.open === id) renderDetail(); }
+};
+
+async function scan(id, photos, mode) {
+  const n = photos ? photos.length : S.boxes.get(id).photos.length;
+  setStatus("busy", `Claude is looking at ${n} photo${n > 1 ? "s" : ""}… this usually takes 20–60 seconds.`);
+  try {
+    const r = await api("POST", `/api/boxes/${id}/scan`, { photos, mode });
+    S.undo = { id, items: r.before };
+    S.fresh = new Set(r.added);
+    keep(r.box);
+    const k = r.added.length;
+    setStatus("ok", mode === "add"
+      ? (k ? `Added ${k} item${k > 1 ? "s" : ""}. Tap a thumbnail to see where it is; fix anything that's off.` : "No new items spotted in that photo.")
+      : `Re-scanned: ${k} item${k === 1 ? "" : "s"} listed.`, `<button class="linkbtn" data-undo>Undo</button>`);
+  } catch (e) { setStatus("err", e.message + " The photos are saved; tap Re-scan to try again."); }
+}
+
+
+/* ---------- backups to Google Drive / OneDrive ---------- */
+let bkTimer = 0;
+async function bkCall(method, path, body, setupCode) {
+  const h = { "Content-Type": "application/json" };
+  if (setupCode) h["X-Setup-Code"] = setupCode;
+  const r = await fetch(path, { method, credentials: "same-origin", headers: h, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(d.error || "The server didn't respond."); e.status = r.status; throw e; }
+  return d;
+}
+const fmtSize = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
+const fmtWhen = (t) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
+function backupPanel(el, setupCode = "") {
+  const P = { list: null, polling: false, seen: undefined, note: "" };
+  clearTimeout(bkTimer);
+  const call = (m, p, b) => bkCall(m, p, b, setupCode);
+
+  async function refresh() {
+    let st;
+    try { st = await call("GET", "/api/backup/status"); }
+    catch (e) {
+      // While restoring on a fresh install, the setup code stops working once passkeys are back.
+      if (e.status === 401 && setupCode && P.restoring) return afterRestore();
+      el.innerHTML = `<p class="err">${esc(e.message)}</p>`; return;
+    }
+    if (P.seen === undefined) P.seen = st.restored?.time || 0;
+    if (!st.job && st.restored && st.restored.time > P.seen) { P.seen = st.restored.time; return afterRestore(st.restored); }
+    draw(st);
+    clearTimeout(bkTimer);
+    if (st.job) bkTimer = setTimeout(refresh, 1500);
+  }
+
+  function draw(st) {
+    if (P.polling) return;
+    if (!st.connected) {
+      el.innerHTML = st.available.length
+        ? `<p>${setupCode ? "Connect the drive your backups are in." : "Keep a copy of everything (boxes, photos, passkeys) in your cloud drive."}</p>
+           <div class="btnrow">${st.available.map((a) => `<button class="btn ghost" data-bk-connect="${esc(a.key)}">Connect ${esc(a.label)}</button>`).join("")}</div>
+           <p class="err" id="bk-err"></p>`
+        : `<p class="hint">To back up to Google Drive or OneDrive, add your client IDs to the <b>.env</b> file on the server and restart it. See “Backups” in the README.</p>`;
+      return;
+    }
+    const c = st.connected, job = st.job;
+    el.innerHTML = `<p><b>${esc(c.label)}</b>${c.account ? ` · ${esc(c.account)}` : ""}</p>
+      ${job ? `<div class="st"><span class="spin" aria-hidden="true"></span><span class="msg" role="status">${job.kind === "backup" ? "Backing up" : "Restoring"}: ${esc(job.progress)}</span></div>` : ""}
+      ${setupCode ? "" : `<p class="hint">${st.last ? `Last backup ${fmtWhen(st.last.time)} · ${fmtSize(st.last.size)}` : "No backup yet."} Backs up automatically once a day when something changed, and keeps the ${st.keep} newest.</p>`}
+      ${st.error && !job ? `<p class="err">${st.error.kind === "backup" ? "Backup" : "Restore"} failed: ${esc(st.error.message)}</p>` : ""}
+      ${P.note ? `<p class="okmsg">${esc(P.note)}</p>` : ""}
+      <div class="btnrow">
+        ${setupCode ? "" : `<button class="btn tape" data-bk-run ${job ? "disabled" : ""}>Back up now</button>`}
+        <button class="btn ghost" data-bk-list ${job ? "disabled" : ""}>${P.list ? "Refresh list" : "Restore…"}</button>
+        ${setupCode ? "" : `<button class="btn ghost danger" data-bk-off ${job ? "disabled" : ""}>Disconnect</button>`}
+      </div>
+      ${P.list ? (P.list.length ? `<ul class="rows">${P.list.map((f) => `<li><span>${fmtWhen(f.created)}<span class="sub">${fmtSize(f.size)}</span></span>
+          <button class="btn ghost" data-bk-restore="${esc(f.id)}" ${job ? "disabled" : ""}>Restore</button></li>`).join("")}</ul>
+          <p class="hint">Restoring replaces the boxes, rooms, photos and passkeys here. What's here now is kept in a <b>before-restore</b> folder on the server.</p>`
+        : `<p class="hint">No backups found in ${esc(c.label)} yet.</p>`) : ""}
+      <p class="err" id="bk-err"></p>`;
+    if (setupCode && !P.list && !job && !P.loadingList) { P.loadingList = true; loadList(); }
+  }
+
+  async function loadList() {
+    try { P.list = await call("GET", "/api/backup/list"); } catch (e) { P.list = null; P.note = ""; showErr(e.message); }
+    P.loadingList = false; refresh();
+  }
+  const showErr = (m) => { const x = el.querySelector("#bk-err"); if (x) x.textContent = m; };
+
+  async function connect(key) {
+    let d;
+    try { d = await call("POST", "/api/backup/connect", { provider: key }); } catch (e) { return showErr(e.message); }
+    P.polling = true;
+    el.innerHTML = d.user_code ? `<div class="codebox">
+        <p>Open <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.url)}</a> on any device, sign in, and enter this code:</p>
+        <div class="code">${esc(d.user_code)}</div>
+        <div class="btnrow"><button class="btn ghost" data-bk-copy="${esc(d.user_code)}">Copy code</button><button class="linkbtn" data-bk-cancel>Cancel</button></div>
+        <p class="hint" style="display:flex;gap:8px;align-items:center"><span class="spin" aria-hidden="true"></span> Waiting for you to approve…</p>
+        <p class="err" id="bk-err"></p></div>` : `<p class="hint">Connecting…</p>`;
+    let wait = d.interval || 5;
+    const tick = async () => {
+      if (!P.polling) return;
+      try {
+        const r = await call("POST", "/api/backup/connect/poll");
+        if (r.status === "pending") { wait = r.interval || wait; bkTimer = setTimeout(tick, wait * 1000); return; }
+        P.polling = false; P.note = "Connected."; refresh();
+      } catch (e) { P.polling = false; await refresh(); showErr(e.message); }
+    };
+    bkTimer = setTimeout(tick, d.user_code ? wait * 1000 : 50);
+  }
+
+  async function afterRestore(info) {
+    clearTimeout(bkTimer);
+    try { S.auth = await (await fetch("/api/auth/state", { credentials: "same-origin" })).json(); } catch {}
+    const what = info ? `Restored ${info.boxes} box${info.boxes === 1 ? "" : "es"}` : "Restored";
+    if (S.auth?.auth && !S.auth.loggedIn) {
+      return showAuth(S.auth.hasPasskeys ? `${what}. Sign in with your passkey.`
+        : `${what}. Create a passkey to finish. The setup code is the same.`, true);
+    }
+    P.list = null; P.note = `${what}${info?.previous ? `. The previous data is kept in data/${info.previous}` : ""}.`;
+    load(); refresh();
+  }
+
+  el.onclick = async (e) => {
+    const t = e.target;
+    if (t.closest("[data-bk-connect]")) return connect(t.closest("[data-bk-connect]").dataset.bkConnect);
+    if (t.closest("[data-bk-cancel]")) { P.polling = false; clearTimeout(bkTimer); return refresh(); }
+    if (t.closest("[data-bk-copy]")) { try { await navigator.clipboard.writeText(t.dataset.bkCopy); t.textContent = "Copied"; } catch {} return; }
+    if (t.closest("[data-bk-run]")) { P.note = ""; try { await call("POST", "/api/backup/run"); } catch (err) { return showErr(err.message); } return refresh(); }
+    if (t.closest("[data-bk-list]")) { P.note = ""; return loadList(); }
+    const off = t.closest("[data-bk-off]");
+    if (off) {
+      if (armed !== off) return arm(off, "Tap again to disconnect (backups stay in your drive)");
+      disarm(); try { await call("POST", "/api/backup/disconnect"); } catch (err) { return showErr(err.message); }
+      P.list = null; P.note = ""; return refresh();
+    }
+    const rs = t.closest("[data-bk-restore]");
+    if (rs) {
+      if (armed !== rs) return arm(rs, "Replace everything here?");
+      disarm(); P.note = ""; P.restoring = true;
+      try { await call("POST", "/api/backup/restore", { id: rs.dataset.bkRestore }); } catch (err) { return showErr(err.message); }
+      return refresh();
+    }
+  };
+  refresh();
+}
+
+async function showRestore(code) {
+  const el = $("#authview");
+  try { await bkCall("GET", "/api/backup/status", null, code); }
+  catch (e) { const x = $("#a-err"); if (x) x.textContent = e.status === 401 ? "Enter the setup code first. It's in data/setup-code.txt on the server." : e.message; return; }
+  el.innerHTML = `<div class="authcard"><h2>Restore from a backup</h2>
+    <p class="hint">Passkeys in the backup keep working only if you restore on the same address they were made for (this is <b>${esc(location.origin)}</b>). Otherwise you'll create a new passkey afterwards.</p>
+    <div id="bk"></div>
+    <button class="linkbtn" id="backtosetup">← Back to setup</button></div>`;
+  $("#backtosetup").onclick = () => { clearTimeout(bkTimer); showAuth(); };
+  backupPanel($("#bk"), code);
+}
+
+/* ---------- settings: rooms + passkeys ---------- */
+async function renderSettings() {
+  const el = $("#s-body");
+  const rooms = S.rooms.map((r) => {
+    const n = [...S.boxes.values()].filter((b) => b.room === r.id).length;
+    return `<li><span><input value="${esc(r.name)}" data-rename-room="${esc(r.id)}" aria-label="Room name"><span class="sub">${n} box${n === 1 ? "" : "es"}</span></span>
+      <button class="btn ghost danger" data-del-room="${esc(r.id)}" data-n="${n}">Delete</button></li>`;
+  }).join("");
+  let keys = "";
+  if (S.auth?.auth) {
+    try {
+      const list = await api("GET", "/api/auth/passkeys");
+      keys = `<section><div class="bh"><h2>Passkeys</h2></div>
+        <ul class="rows">${list.map((k) => `<li><span><input value="${esc(k.name)}" data-rename-key="${esc(k.id)}" aria-label="Passkey name">
+          <span class="sub">${k.current ? '<span class="pill">this device</span> ' : ""}Last used ${new Date(k.lastUsed).toLocaleDateString()}</span></span>
+          <button class="btn ghost danger" data-del-key="${esc(k.id)}">Remove</button></li>`).join("")}</ul>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn ghost" data-localkey>Add a passkey on this device</button>
+        <button class="btn ghost" id="signout">Sign out</button></div>
+        <p class="hint">To add another person or device: sign in there with “Use a phone or tablet” and your phone, then add a passkey on that device.</p>
+        <p class="err" id="k-err"></p></section>`;
+    } catch (e) { keys = `<p class="notice">${esc(e.message)}</p>`; }
+  }
+  el.innerHTML = `<section><div class="bh"><h2>Rooms</h2></div>
+      ${S.rooms.length ? `<ul class="rows">${rooms}</ul>` : `<p class="hint">No rooms yet. Add them with + Room on the main screen.</p>`}</section>
+    <section><div class="bh"><h2>Backups</h2></div><div id="bk"></div></section>${keys}
+    ${S.auth?.auth ? "" : `<p class="hint">Sign-in is turned off on this server (AUTH=off).</p>`}`;
+  backupPanel($("#bk"));
+  const so = $("#signout");
+  if (so) so.onclick = async () => { await api("POST", "/api/auth/logout", {}).catch(() => {}); S.auth.loggedIn = false; showAuth(); };
+}
+$("#settings").addEventListener("change", async (e) => {
+  const t = e.target;
+  try {
+    if (t.dataset.renameRoom) { const r = await api("PATCH", "/api/rooms/" + t.dataset.renameRoom, { name: t.value }); S.rooms = r.rooms; render(); }
+    if (t.dataset.renameKey) await api("PATCH", "/api/auth/passkeys/" + t.dataset.renameKey, { name: t.value });
+  } catch (err) { alert(err.message); }
+});
+$("#settings").addEventListener("click", async (e) => {
+  const dr = e.target.closest("[data-del-room]");
+  if (dr) {
+    const n = +dr.dataset.n;
+    if (armed !== dr) return arm(dr, n ? `Delete? ${n} box${n > 1 ? "es" : ""} become “No room”` : "Tap again to delete");
+    disarm();
+    try { const r = await api("DELETE", "/api/rooms/" + dr.dataset.delRoom); S.rooms = r.rooms; if (S.room === dr.dataset.delRoom) S.room = "all"; await load(); renderSettings(); }
+    catch (err) { alert(err.message); }
+    return;
+  }
+  const dk = e.target.closest("[data-del-key]");
+  if (dk) {
+    if (armed !== dk) return arm(dk, "Tap again to remove");
+    disarm();
+    try { await api("DELETE", "/api/auth/passkeys/" + dk.dataset.delKey); renderSettings(); }
+    catch (err) { const k = $("#k-err"); if (k) k.textContent = err.message; }
+  }
+});
+</script>
+</body></html>
