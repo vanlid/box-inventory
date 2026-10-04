@@ -46,11 +46,31 @@ docker compose logs | grep "setup code"     # the code for your first passkey
 ```
 
 - **Data:** your boxes, photos and passkeys live in `./data` next to `compose.yaml`.
-- **Update:** `docker compose pull && docker compose up -d`.
+- **Update:** `docker compose pull && docker compose up -d` (or automatically, see below).
 - **Stop:** `docker compose down` (data is kept).
 - **Start at boot:** make Docker start at boot (Docker Desktop: "Start when you sign in"). The container restarts by itself.
 - **HTTPS for passkeys:** either run `tailscale serve --bg 8765` on the host (see "Sign-in with passkeys"),
   or use the built-in Tailscale add-on below.
+
+#### Optional: automatic updates every night
+
+Run the update command on a schedule. Nights without a new release change nothing, and the
+Tailscale add-on is restarted along with the app when it updates.
+
+**Linux or Mac:** `crontab -e` and add this line (use your folder, and the path `which docker` prints):
+```
+0 4 * * * cd /home/you/box-inventory && (date; /usr/bin/docker compose pull -q && /usr/bin/docker compose up -d && /usr/bin/docker image prune -f) >> update.log 2>&1
+```
+Your user needs to run `docker` without `sudo` (the `docker` group); otherwise use `sudo crontab -e`.
+On a Mac, keep the folder outside Documents and Desktop, which cron can't read.
+
+**Windows** (Command Prompt, your folder; Docker Desktop must be running at that time):
+```
+schtasks /create /tn "Box Inventory update" /sc daily /st 04:00 /tr "cmd /c cd /d C:\box-inventory && docker compose pull -q && docker compose up -d && docker image prune -f"
+```
+
+`docker image prune -f` removes the replaced image so the disk doesn't fill up; leave it out if you
+want to be able to go back to the previous version. `update.log` shows what each night did.
 
 #### Optional: Tailscale inside Docker
 
