@@ -108,6 +108,14 @@ section.block { display: grid; gap: 10px; margin-top: 18px; }
 .addph span { display: block; font: 400 12px var(--body); color: var(--muted); }
 .addph input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .addph:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+label.cambtn { display: none; place-items: center; border: 1.5px solid var(--line); border-radius: 10px; background: transparent; color: var(--ink);
+  padding: 0 10px; min-height: 40px; cursor: pointer; }
+.cambtn svg { width: 22px; height: 22px; }
+.cambtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.photos .cambtn { aspect-ratio: 1; border: 1.5px dashed var(--ink); border-radius: 8px; background: var(--surface); }
+.photos .cambtn svg { width: 32px; height: 32px; }
+.camrow { display: flex; gap: 8px; align-items: center; }
+@media (pointer: coarse) { label.cambtn { display: grid; } }
 
 #status { min-height: 0; }
 .st { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--line); }
@@ -374,6 +382,9 @@ select.field-sel { width: 100%; padding: 8px 10px; border: 1.5px solid var(--lin
 <script src="/app/offline.js"></script><!-- before the main script: startup may need it at once when offline -->
 <script>
 const $ = (s) => document.querySelector(s);
+// Camera button for the photo picker matching `sel` in the same parent: takes one photo and hands it to that picker.
+const camBtn = (sel, disabled = false) => `<label class="cambtn" title="Take photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+  <input type="file" accept="image/*" capture="environment" data-cam-for='${sel}' aria-label="Take photo" hidden ${disabled ? "disabled" : ""}></label>`;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = (n) => String(n).padStart(2, "0");
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -805,7 +816,8 @@ function renderDetail() {
       <button class="x" data-rmph="${esc(p)}" aria-label="Remove photo">✕</button></div>`).join("")}
     <label class="addph">
       <input id="photoin" type="file" accept="image/*" multiple ${S.busy ? "disabled" : ""}>
-      <div>+ Add photos<span>Camera or gallery</span></div></label>
+      <div>+ Add photos<span>From your photos</span></div></label>
+    ${camBtn("#photoin", S.busy)}
   </div>`;
 
   const items = b.items || [];
@@ -1324,7 +1336,7 @@ function renderThings() {
           <option value="single">One specific item</option><option value="group">Several look-alikes (socks, towels)</option></select></div>
         <div class="field" id="tn-totalf" hidden><label for="tn-total">How many in total</label><input id="tn-total" type="number" min="1" value="10"></div></div>
       <div class="field"><label for="tn-home">Home (where it belongs)</label><select id="tn-home" class="field-sel">${homeOpts("")}</select></div>
-      <div class="field"><label for="tn-pic">Picture (helps Claude recognise it)</label><input id="tn-pic" type="file" accept="image/*"></div>
+      <div class="field"><label for="tn-pic">Picture (helps Claude recognise it)</label><div class="camrow"><input id="tn-pic" type="file" accept="image/*">${camBtn("#tn-pic")}</div></div>
       <div class="btnrow"><button class="btn tape" type="submit">Start tracking</button><button class="linkbtn" type="button" data-tcancel>Cancel</button></div>
       <p class="hint">Tip: you can also tap <b>Track</b> next to anything in a box's contents.</p><p class="err" id="tn-err"></p></form>` : ""}
     ${all.length ? (shown.length ? `<div class="tlist">${shown.map(thingCard).join("")}</div>` : `<p class="notice">Nothing here. ${f === "away" ? "Everything is at home." : ""}</p>`)
@@ -1367,7 +1379,7 @@ function renderThing() {
   }).join("");
   $("#t-body").innerHTML = `<div class="thead">
       <div style="display:grid;gap:8px">${t.hasRef ? `<img class="tpic" src="${refSrc(t)}" alt="">` : `<div class="tpic" style="display:grid;place-items:center;color:var(--muted)">No picture yet</div>`}
-        <label class="btn ghost" style="text-align:center;cursor:pointer">${t.hasRef ? "Change picture" : "Add a picture"}<input id="tp-pic" type="file" accept="image/*" hidden></label></div>
+        <div class="camrow"><label class="btn ghost" style="flex:1;text-align:center;cursor:pointer">${t.hasRef ? "Change picture" : "Add a picture"}<input id="tp-pic" type="file" accept="image/*" hidden></label>${camBtn("#tp-pic")}</div></div>
       <div class="fields">
         <div class="field"><label for="tp-name">Name <span class="code">${esc(t.code)}</span></label><input id="tp-name" class="title" value="${esc(t.name)}"></div>
         <div class="field"><label for="tp-note">Note</label><input id="tp-note" value="${esc(t.note)}" placeholder="Colour, brand, size…"></div>
@@ -1600,7 +1612,7 @@ function detailFields(x, prefix) {  // the same fields for box items (prefix "it
     ${prefix === "it" ? `<div class="field"><label>Note</label><input data-it="note" value="${esc(x.note || "")}" placeholder="Brand, colour, size…"></div>` : ""}
     <div class="field receipt"><label>Receipt</label><div class="btnrow">
       ${x.receipt ? `<button class="seenbtn" data-lb-src="/receipts/${esc(x.receipt)}.jpg" data-lb-box="" data-lb-cap="Receipt"><img src="${S.offline ? "" : `/receipts/${esc(x.receipt)}.jpg`}" alt="Receipt" class="rthumb"></button>` : ""}
-      <label class="btn ghost" style="cursor:pointer">${x.receipt ? "Replace" : "Add photo"}<input type="file" accept="image/*" data-receipt="${prefix}" hidden></label>
+      <label class="btn ghost" style="cursor:pointer">${x.receipt ? "Replace" : "Add photo"}<input type="file" accept="image/*" data-receipt="${prefix}" hidden></label>${camBtn(`[data-receipt=${prefix}]`)}
       ${x.receipt ? `<button class="linkbtn" data-${prefix}-noreceipt>Remove</button>` : ""}</div></div>
   </div>`;
 }
@@ -1765,6 +1777,12 @@ function voiceSection() {
       ? "In Chrome and Edge, the browser sends the audio to its speech service (Google or Microsoft) to turn it into text." : "Safari usually turns speech into text on the device."}</p>`;
 }
 document.addEventListener("change", (e) => { if (e.target.id === "voice-lang") store.set("voiceLang", e.target.value); });
+document.addEventListener("change", (e) => {
+  const cam = e.target, dst = cam.dataset.camFor && cam.closest(".cambtn").parentElement.querySelector(cam.dataset.camFor);
+  if (!dst || !cam.files.length) return;
+  const dt = new DataTransfer(); dt.items.add(cam.files[0]); cam.value = "";
+  dst.files = dt.files; dst.dispatchEvent(new Event("change", { bubbles: true }));
+});
 
 
 /* ---------- scanning engines: Claude, or a local model through Ollama ---------- */
