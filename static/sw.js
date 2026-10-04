@@ -1,7 +1,7 @@
 // Box Inventory service worker: makes the app installable, receives photos shared from other
 // apps, and keeps the app's own page and icons for a fast start. Inventory data and photos are
 // never cached here: they always come from the server, behind sign-in.
-const SHELL = "box-shell-v2";
+const SHELL = "box-shell-v3";
 const SHARED = "box-shared";
 // Everything the app needs to start without a connection (the offline copy itself lives in IndexedDB).
 const SHELL_FILES = ["/", "/app/offline.js", "/vendor/qrcode.js", "/manifest.webmanifest", "/favicon.ico",

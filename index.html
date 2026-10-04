@@ -467,13 +467,23 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !S
 const b64e = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64d = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const canPasskey = () => window.isSecureContext && !!window.PublicKeyCredential;
+// One passkey request at a time. A password manager closed with the back button may never answer, and the
+// browser then refuses every later request ("A request is already pending"), so a new request or signing out
+// cancels the one still open.
+let passkeyAbort = null;
+function passkeyRequest(kind, publicKey) {
+  cancelPasskey();
+  passkeyAbort = new AbortController();
+  return navigator.credentials[kind]({ publicKey, signal: passkeyAbort.signal });
+}
+function cancelPasskey() { passkeyAbort?.abort(); passkeyAbort = null; }
 function deviceName() {
   const ua = navigator.userAgent;
   return /Android/.test(ua) ? "Android phone" : /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad"
     : /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows PC" : /Linux/.test(ua) ? "Linux computer" : "Passkey";
 }
 function passkeyError(e) {
-  if (e?.name === "NotAllowedError") return "Cancelled, or the passkey prompt timed out. Try again.";
+  if (e?.name === "NotAllowedError" || e?.name === "AbortError") return "Cancelled, or the passkey prompt timed out. Try again.";
   if (e?.name === "InvalidStateError") return "This device already has a passkey for Box Inventory. Use Sign in instead.";
   if (e?.name === "SecurityError") return "Passkeys don't work on this address. Open the app at its secure https address.";
   return e?.message || "Something went wrong with the passkey.";
@@ -482,14 +492,14 @@ function passkeyError(e) {
 async function createPasskey(setupCode, name) {
   const o = await api("POST", "/api/auth/register/options", { setupCode });
   // prf: lets this passkey also lock the offline copy (static/app/offline.js); ignored where unsupported.
-  const cred = await navigator.credentials.create({ publicKey: { ...o, extensions: { prf: {} }, challenge: b64d(o.challenge),
-    user: { ...o.user, id: b64d(o.user.id) }, excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: b64d(c.id) })) } });
+  const cred = await passkeyRequest("create", { ...o, extensions: { prf: {} }, challenge: b64d(o.challenge),
+    user: { ...o.user, id: b64d(o.user.id) }, excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: b64d(c.id) })) });
   await api("POST", "/api/auth/register/verify", { setupCode, name, credential: { id: cred.id, rawId: b64e(cred.rawId), type: cred.type,
     response: { clientDataJSON: b64e(cred.response.clientDataJSON), attestationObject: b64e(cred.response.attestationObject) } } });
 }
 async function signIn() {
   const o = await api("POST", "/api/auth/login/options", {});
-  const cred = await navigator.credentials.get({ publicKey: { ...o, challenge: b64d(o.challenge) } });
+  const cred = await passkeyRequest("get", { ...o, challenge: b64d(o.challenge) });
   const r = cred.response;
   await api("POST", "/api/auth/login/verify", { credential: { id: cred.id, rawId: b64e(cred.rawId), type: cred.type,
     response: { clientDataJSON: b64e(r.clientDataJSON), authenticatorData: b64e(r.authenticatorData), signature: b64e(r.signature),
@@ -1853,7 +1863,7 @@ async function renderSettings() {
   checkEngines();
   Offline.section().then((h) => { const x = $("#offsec"); if (x) x.innerHTML = h; });
   const so = $("#signout");
-  if (so) so.onclick = async () => { await api("POST", "/api/auth/logout", {}).catch(() => {}); S.auth.loggedIn = false; showAuth(); };
+  if (so) so.onclick = async () => { cancelPasskey(); await api("POST", "/api/auth/logout", {}).catch(() => {}); S.auth.loggedIn = false; showAuth(); };
 }
 $("#settings").addEventListener("change", async (e) => {
   const t = e.target;

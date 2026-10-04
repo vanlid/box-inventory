@@ -87,7 +87,7 @@ const Offline = (() => {
     }
     if (!ok) throw new Error("The passkey check failed.");
   }
-  const passkeyGet = (opts) => navigator.credentials.get({ publicKey: { timeout: 120000, userVerification: "required", ...opts } });
+  const passkeyGet = (opts) => passkeyRequest("get", { timeout: 120000, userVerification: "required", ...opts });
 
   /* ---- turning it on ---- */
   async function enable() {
