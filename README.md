@@ -82,16 +82,25 @@ internet, so a phone without Tailscale can open it. Your passkeys and printed la
 
 1. Create your first passkey on the tailnet address **before** turning Funnel on. Until a passkey
    exists, the setup code is all that stands between a stranger and your app.
-2. Allow Funnel in the Tailscale admin console (**Access controls**). Newer tailnets allow it by
-   default; if yours doesn't, add to the policy file:
+2. Allow Funnel in the Tailscale admin console (**Access controls**). The default policy doesn't,
+   even though it allows all connections. Add this section after the `"grants": [...]` list (or
+   just the `{...}` line if a `"nodeAttrs"` section already exists), then save:
    ```
-   "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }]
+   "nodeAttrs": [
+       {"target": ["autogroup:member"], "attr": ["funnel"]},
+   ],
    ```
-3. Add `TS_FUNNEL=true` to `.env` and run `docker compose up -d`.
+3. Add `TS_FUNNEL=true` to `.env` and run `docker compose up -d --force-recreate tailscale`.
+4. Check that Tailscale allows it. This prints `funnel` lines; no output means step 2 is missing:
+   `docker compose exec tailscale tailscale status --json | grep -i funnel`
+
+   Don't rely on `tailscale funnel status` or the admin console badge: they say "Funnel on" even
+   when the policy doesn't allow it, and the address then never reaches the internet.
 
 The app is now public. Passkeys still guard everything, but **never combine Funnel with
 `AUTH=off`**: that puts your whole inventory on the internet without a sign-in. Expect bots to
-probe the address. To make it private again, remove `TS_FUNNEL` and run `docker compose up -d`.
+probe the address. To make it private again, remove `TS_FUNNEL` and run
+`docker compose up -d --force-recreate tailscale`.
 
 ### What goes in `.env`
 
