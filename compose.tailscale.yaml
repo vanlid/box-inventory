@@ -6,6 +6,8 @@
 # Turn it on with one line in .env (use ; instead of : between the files on Windows):
 #   COMPOSE_FILE=compose.yaml:compose.tailscale.yaml
 #   TS_AUTHKEY=tskey-auth-...        (Tailscale admin console → Settings → Keys)
+# Add TS_FUNNEL=true to also reach it from the internet without the Tailscale app (Funnel).
+# Passkeys still protect it; never combine with AUTH=off.
 services:
   tailscale:
     image: tailscale/tailscale:stable
@@ -31,10 +33,10 @@ services:
 
 configs:
   ts-serve:
-    # HTTPS on 443 with a real certificate, proxied to the app. Not public: Funnel stays off.
+    # HTTPS on 443 with a real certificate, proxied to the app. Public only with TS_FUNNEL=true.
     content: |
       {
         "TCP": { "443": { "HTTPS": true } },
         "Web": { "$${TS_CERT_DOMAIN}:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:8765" } } } },
-        "AllowFunnel": { "$${TS_CERT_DOMAIN}:443": false }
+        "AllowFunnel": { "$${TS_CERT_DOMAIN}:443": ${TS_FUNNEL:-false} }
       }

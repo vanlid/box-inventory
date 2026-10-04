@@ -75,6 +75,24 @@ keep working.
 Tailscale keeps its login in `./tailscale`. If Tailscale has a problem, the app keeps working on
 your LAN port. Use `TS_HOSTNAME` in `.env` for a different device name.
 
+#### Optional: reach it from anywhere without the Tailscale app (Funnel)
+
+Tailscale Funnel puts the same `https://box-inventory.<your-tailnet>.ts.net` address on the
+internet, so a phone without Tailscale can open it. Your passkeys and printed labels keep working.
+
+1. Create your first passkey on the tailnet address **before** turning Funnel on. Until a passkey
+   exists, the setup code is all that stands between a stranger and your app.
+2. Allow Funnel in the Tailscale admin console (**Access controls**). Newer tailnets allow it by
+   default; if yours doesn't, add to the policy file:
+   ```
+   "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }]
+   ```
+3. Add `TS_FUNNEL=true` to `.env` and run `docker compose up -d`.
+
+The app is now public. Passkeys still guard everything, but **never combine Funnel with
+`AUTH=off`**: that puts your whole inventory on the internet without a sign-in. Expect bots to
+probe the address. To make it private again, remove `TS_FUNNEL` and run `docker compose up -d`.
+
 ### What goes in `.env`
 
 | Setting | Needed? | What it is |
