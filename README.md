@@ -233,6 +233,9 @@ on HTTPS, so give the server a secure address with [Tailscale](https://tailscale
 scan the QR code with your phone. Once signed in, it offers to create a passkey for that device.
 Manage passkeys under **Settings**. The app works from anywhere your phone is on Tailscale.
 
+**Security key (YubiKey)?** Use *Using a security key (YubiKey)?* on the setup screen, or *Add a
+security key* in **Settings**, so the key can also lock the offline copy.
+
 To run without sign-in (e.g. plain HTTP on a trusted network), set `AUTH=off`.
 
 ## Backups to Google Drive or OneDrive

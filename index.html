@@ -489,10 +489,12 @@ function passkeyError(e) {
   return e?.message || "Something went wrong with the passkey.";
 }
 
-async function createPasskey(setupCode, name) {
+async function createPasskey(setupCode, name, securityKey = false) {
   const o = await api("POST", "/api/auth/register/options", { setupCode });
-  // prf: lets this passkey also lock the offline copy (static/app/offline.js); ignored where unsupported.
-  const cred = await passkeyRequest("create", { ...o, extensions: { prf: {} }, challenge: b64d(o.challenge),
+  // Security keys only get PRF (which locks the offline copy, static/app/offline.js) when it's asked for at creation.
+  // Other passkeys give it later anyway, and asking for it makes some browsers hide Windows Hello and password managers.
+  const extra = securityKey ? { extensions: { prf: {} }, hints: ["security-key"] } : {};
+  const cred = await passkeyRequest("create", { ...o, ...extra, challenge: b64d(o.challenge),
     user: { ...o.user, id: b64d(o.user.id) }, excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: b64d(c.id) })) });
   await api("POST", "/api/auth/register/verify", { setupCode, name, credential: { id: cred.id, rawId: b64e(cred.rawId), type: cred.type,
     response: { clientDataJSON: b64e(cred.response.clientDataJSON), attestationObject: b64e(cred.response.attestationObject) } } });
@@ -529,14 +531,17 @@ function showAuth(msg = "", ok = false) {
       <p class="hint">It's in <b>data/setup-code.txt</b> on the computer running the app, and in its log.</p>
       <div class="field"><label for="a-name">Name for this passkey</label><input id="a-name" value="${esc(deviceName())}"></div>
       <button class="btn tape" type="submit">Create passkey</button>
+      <button type="button" class="linkbtn" id="a-seckey">Using a security key (YubiKey)?</button>
       <p class="${ok ? "okmsg" : "err"}" id="a-err">${esc(msg)}</p>
       <button type="button" class="linkbtn" id="restorelink">Restoring from a backup instead?</button></form>`;
     $("#restorelink").onclick = () => showRestore($("#a-code").value);
-    $("#setupform").onsubmit = async (e) => {
-      e.preventDefault(); $("#a-err").textContent = "";
-      try { await createPasskey($("#a-code").value, $("#a-name").value); S.auth.loggedIn = true; S.auth.hasPasskeys = true; S.auth.origin = location.origin; show("list"); load(); }
+    const setup = async (securityKey) => {
+      $("#a-err").textContent = "";
+      try { await createPasskey($("#a-code").value, $("#a-name").value, securityKey); S.auth.loggedIn = true; S.auth.hasPasskeys = true; S.auth.origin = location.origin; show("list"); load(); }
       catch (err) { $("#a-err").textContent = passkeyError(err); }
     };
+    $("#setupform").onsubmit = (e) => { e.preventDefault(); setup(false); };
+    $("#a-seckey").onclick = () => { if ($("#setupform").reportValidity()) setup(true); };
     return;
   }
   el.innerHTML = `<div class="authcard">
@@ -561,8 +566,10 @@ function offerLocalPasskey() {
 }
 document.addEventListener("click", async (e) => {
   if (e.target.closest("[data-nokey]")) { store.set("skipLocalKey", "1"); $("#banner").innerHTML = ""; }
-  if (e.target.closest("[data-localkey]")) {
-    try { await createPasskey("", deviceName()); $("#banner").innerHTML = `<div class="banner"><span class="msg">Passkey created. This device can sign in on its own now.</span></div>`; if (S.view === "settings") renderSettings(); }
+  const lk = e.target.closest("[data-localkey]");
+  if (lk) {
+    const securityKey = lk.dataset.localkey === "security";
+    try { await createPasskey("", securityKey ? "Security key" : deviceName(), securityKey); $("#banner").innerHTML = `<div class="banner"><span class="msg">Passkey created. This device can sign in on its own now.</span></div>`; if (S.view === "settings") renderSettings(); }
     catch (err) { $("#banner").innerHTML = `<div class="banner"><span class="msg err">${esc(passkeyError(err))}</span><button class="linkbtn" data-nokey>Close</button></div>`; }
   }
 });
@@ -1844,6 +1851,7 @@ async function renderSettings() {
           <button class="btn ghost danger" data-del-key="${esc(k.id)}">Remove</button></li>`).join("")}</ul>
         <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn ghost" data-localkey>Add a passkey on this device</button>
         <button class="btn ghost" id="signout">Sign out</button></div>
+        <button class="linkbtn" data-localkey="security">Add a security key (YubiKey)</button>
         <p class="hint">To add another person or device: sign in there with “Use a phone or tablet” and your phone, then add a passkey on that device.</p>
         <p class="err" id="k-err"></p></section>`;
     } catch (e) { keys = `<p class="notice">${esc(e.message)}</p>`; }
