@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Upgrade too, so Debian security fixes apply even before the base image is rebuilt with them.
 RUN apt-get update \
